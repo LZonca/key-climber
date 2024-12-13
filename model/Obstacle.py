@@ -7,7 +7,7 @@ class Obstacle:
     def __init__(self, window_width, is_trap=False, key=None):
         self.is_trap = is_trap
         self.color = (255, 0, 0) if self.is_trap else (0, 0, 0)
-        self.size = 50
+        self.size = 70
         self.speed = 10
         self.pos = [random.randint(0, window_width - self.size), 0]
         self.key = key if key else random.choice(AVAILABLE_KEYS)
@@ -17,5 +17,10 @@ class Obstacle:
 
     def draw(self, screen, font):
         pygame.draw.rect(screen, self.color, (*self.pos, self.size, self.size))
-        key_text = font.render(self.key, True, (255, 255, 255))
-        screen.blit(key_text, (self.pos[0] + 10, self.pos[1] + 10))
+
+        font_size = int(self.size * 0.75)
+        key_font = pygame.font.Font(None, font_size)
+        key_text = key_font.render(self.key, True, (255, 255, 255))
+
+        text_rect = key_text.get_rect(center=(self.pos[0] + self.size // 2, self.pos[1] + self.size // 2))
+        screen.blit(key_text, text_rect)

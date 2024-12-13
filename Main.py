@@ -6,12 +6,14 @@ import random
 import threading
 import json
 from model.Background import Background
+from model.Lava import Lava
 from model.Player import Player
 from model.Obstacle import Obstacle
+from model.Settings import Settings
 
 os.environ['SDL_VIDEO_CENTERED'] = '1'
 
-# Global constant for available keys
+# Keys
 AVAILABLE_KEYS = ["A", "S", "D", "W", "Z", "Q", "E", "R", "T", "Y", "U", "I", "O", "P", "F", "G", "H", "J", "K", "L", "X", "C", "V", "B", "N", "M"]
 MAX_ROCK_IMG = 4
 TAUX_PIEGES = 0.15
@@ -59,6 +61,7 @@ def play_wrong_key_sound():
 
 class Game:
     def __init__(self):
+        self.settings = Settings('./settings.xml')
         self.player = Player(WIDTH, HEIGHT)
         self.obstacles = []
         self.score = 0
@@ -68,9 +71,21 @@ class Game:
         self.available_keys = AVAILABLE_KEYS.copy()
         self.rock_image = None
         self.game_over = False
-        self.background = Background('./ressources/background.jpg', 5, WIDTH, HEIGHT)
+        self.background = Background('./ressources/background.jpg', self.player.speed, WIDTH, HEIGHT)
         self.scores_file = './scores.json'
         self.high_scores = self.load_scores()
+        self.lava = Lava(WIDTH, HEIGHT, 1)
+        self.apply_settings()
+
+    def apply_settings(self):
+        pygame.mixer.music.set_volume(self.settings.settings['volume'])
+        display_mode = self.settings.settings['display_mode']
+        if display_mode == 'fullscreen':
+            pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
+        elif display_mode == 'borderless':
+            pygame.display.set_mode((WIDTH, HEIGHT), pygame.NOFRAME)
+        else:
+            pygame.display.set_mode((WIDTH, HEIGHT))
 
     def load_scores(self):
         if not os.path.exists(self.scores_file):
@@ -99,36 +114,24 @@ class Game:
         self.save_scores()
 
     def show_menu(self):
-        self.reset_game()  # Reset the game state before showing the menu
+        self.reset_game()
         menu_running = True
         while menu_running:
             screen.fill(WHITE)
             title_text = font.render("Jeu d'Escalade", True, BLACK)
             start_text = font.render("Press ENTER to Start", True, BLACK)
+            settings_text = font.render("Press S for Settings", True, BLACK)
 
             title_x = WIDTH // 2 - title_text.get_width() // 2
             title_y = HEIGHT // 2 - 200
             start_x = WIDTH // 2 - start_text.get_width() // 2
-            start_y = title_y + 150  # Adjusted to be below the title
+            start_y = title_y + 150
+            settings_x = WIDTH // 2 - settings_text.get_width() // 2
+            settings_y = start_y + 50
 
             screen.blit(title_text, (title_x, title_y))
             screen.blit(start_text, (start_x, start_y))
-
-            # Display high scores
-            score_title_text = font.render("High Scores", True, BLACK)
-            score_title_x = WIDTH // 2 - score_title_text.get_width() // 2
-            score_title_y = start_y + 100  # Adjusted to be below the start text
-            screen.blit(score_title_text, (score_title_x, score_title_y))
-
-            # Calculate spacing based on the number of high scores and available height
-            max_scores_display = min(len(self.high_scores), 10)
-            score_spacing = (HEIGHT - score_title_y - 100) // (max_scores_display + 1)
-
-            for i, score in enumerate(self.high_scores[:max_scores_display]):
-                score_text = font.render(f"{i + 1}. {score}", True, BLACK)
-                score_x = WIDTH // 2 - score_text.get_width() // 2
-                score_y = score_title_y + (i + 1) * score_spacing
-                screen.blit(score_text, (score_x, score_y))
+            screen.blit(settings_text, (settings_x, settings_y))
 
             pygame.display.flip()
 
@@ -139,6 +142,8 @@ class Game:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_RETURN:
                         menu_running = False
+                    if event.key == pygame.K_s:
+                        self.show_settings_menu()
 
     def generate_obstacle(self):
         if not self.available_keys:
@@ -235,6 +240,67 @@ class Game:
 
         pygame.display.flip()
 
+    def show_settings_menu(self):
+        settings_running = True
+        while settings_running:
+            screen.fill(WHITE)
+            title_text = font.render("Settings", True, BLACK)
+            volume_text = font.render(f"Volume: {self.settings.settings['volume']}", True, BLACK)
+            font_size_text = font.render(f"Font Size: {self.settings.settings['font_size']}", True, BLACK)
+            square_size_text = font.render(f"Square Size: {self.settings.settings['square_size']}", True, BLACK)
+            display_mode_text = font.render(f"Display Mode: {self.settings.settings['display_mode']}", True, BLACK)
+            back_text = font.render("Press B to go back", True, BLACK)
+
+            title_x = WIDTH // 2 - title_text.get_width() // 2
+            title_y = HEIGHT // 2 - 200
+            volume_x = WIDTH // 2 - volume_text.get_width() // 2
+            volume_y = title_y + 50
+            font_size_x = WIDTH // 2 - font_size_text.get_width() // 2
+            font_size_y = volume_y + 50
+            square_size_x = WIDTH // 2 - square_size_text.get_width() // 2
+            square_size_y = font_size_y + 50
+            display_mode_x = WIDTH // 2 - display_mode_text.get_width() // 2
+            display_mode_y = square_size_y + 50
+            back_x = WIDTH // 2 - back_text.get_width() // 2
+            back_y = display_mode_y + 100
+
+            screen.blit(title_text, (title_x, title_y))
+            screen.blit(volume_text, (volume_x, volume_y))
+            screen.blit(font_size_text, (font_size_x, font_size_y))
+            screen.blit(square_size_text, (square_size_x, square_size_y))
+            screen.blit(display_mode_text, (display_mode_x, display_mode_y))
+            screen.blit(back_text, (back_x, back_y))
+
+            pygame.display.flip()
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    settings_running = False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_b:
+                        settings_running = False
+                    if event.key == pygame.K_UP:
+                        self.settings.settings['volume'] = min(self.settings.settings['volume'] + 0.1, 1.0)
+                    if event.key == pygame.K_DOWN:
+                        self.settings.settings['volume'] = max(self.settings.settings['volume'] - 0.1, 0.0)
+                    if event.key == pygame.K_LEFT:
+                        self.settings.settings['font_size'] = max(self.settings.settings['font_size'] - 1, 10)
+                    if event.key == pygame.K_RIGHT:
+                        self.settings.settings['font_size'] = min(self.settings.settings['font_size'] + 1, 100)
+                    if event.key == pygame.K_w:
+                        self.settings.settings['square_size'] = max(self.settings.settings['square_size'] - 1, 10)
+                    if event.key == pygame.K_s:
+                        self.settings.settings['square_size'] = min(self.settings.settings['square_size'] + 1, 100)
+                    if event.key == pygame.K_f:
+                        self.settings.settings['display_mode'] = 'fullscreen'
+                    if event.key == pygame.K_w:
+                        self.settings.settings['display_mode'] = 'windowed'
+                    if event.key == pygame.K_b:
+                        self.settings.settings['display_mode'] = 'borderless'
+                    self.settings.save_settings()
+                    self.apply_settings()
+
     def run(self):
         try:
             self.show_menu()
@@ -257,6 +323,8 @@ class Game:
                         obstacle.draw(screen, font)
 
                     self.player.draw(screen)
+                    self.lava.move_up(self.background.speed)
+                    self.lava.draw(screen)
 
                     if self.rock_image and time.time() < self.rock_display_time:
                         screen.blit(self.rock_image, (
@@ -279,6 +347,10 @@ class Game:
 
                     lives_text = font.render(f"Lives: {self.lives}", True, BLACK)
                     screen.blit(lives_text, (20, 60))
+
+                    # Check for collision with lava
+                    if self.player.rect.bottom > self.lava.rect.top:
+                        self.game_over = True
 
                 else:
                     self.display_game_over()
