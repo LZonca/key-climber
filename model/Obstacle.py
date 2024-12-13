@@ -1,7 +1,9 @@
 import pygame
 import random
 
-AVAILABLE_KEYS = ["A", "S", "D", "W", "Z", "Q", "E", "R", "T", "Y", "U", "I", "O", "P", "F", "G", "H", "J", "K", "L", "X", "C", "V", "B", "N", "M"]
+AVAILABLE_KEYS = ["A", "S", "D", "W", "Z", "Q", "E", "R", "T", "Y", "U", "I", "O", "P", "F", "G", "H", "J", "K", "L",
+                  "X", "C", "V", "B", "N", "M"]
+
 
 class Obstacle:
     def __init__(self, window_width, is_trap=False, key=None):
@@ -12,12 +14,21 @@ class Obstacle:
         self.pos = [random.randint(0, window_width - self.size), 0]
         self.key = key if key else random.choice(AVAILABLE_KEYS)
 
+        # Add a subtle border for traps to make them more distinguishable
+        self.border_color = (139, 0, 0) if self.is_trap else (50, 50, 50)
+
     def move_down(self):
         self.pos[1] += self.speed
 
     def draw(self, screen, font):
+        # Draw border first for trap emphasis
+        pygame.draw.rect(screen, self.border_color,
+                         (*self.pos, self.size, self.size), 4 if self.is_trap else 2)
+
+        # Draw main rectangle
         pygame.draw.rect(screen, self.color, (*self.pos, self.size, self.size))
 
+        # Draw key text
         font_size = int(self.size * 0.75)
         key_font = pygame.font.Font(None, font_size)
         key_text = key_font.render(self.key, True, (255, 255, 255))

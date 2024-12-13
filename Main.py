@@ -20,6 +20,7 @@ TAUX_PIEGES = 0.15
 NB_VIES = 4
 MAX_BLACK_SQUARES = 20
 BLACK_SQUARE_SPAWN_RATE = 15
+LAVA_SPEED = 1
 
 pygame.init()
 
@@ -71,10 +72,10 @@ class Game:
         self.available_keys = AVAILABLE_KEYS.copy()
         self.rock_image = None
         self.game_over = False
-        self.background = Background('./ressources/background.jpg', self.player.speed, WIDTH, HEIGHT)
+        self.background = Background('./ressources/background.jpg', WIDTH, HEIGHT )
         self.scores_file = './scores.json'
         self.high_scores = self.load_scores()
-        self.lava = Lava(WIDTH, HEIGHT, 1)
+        self.lava = Lava(WIDTH, HEIGHT, LAVA_SPEED, "./ressources/lava.jpg")
         self.apply_settings()
 
     def apply_settings(self):
@@ -172,24 +173,39 @@ class Game:
         self.available_keys = AVAILABLE_KEYS.copy()
         self.rock_image = None
         self.game_over = False
+        self.lava.reset_position()
 
     def handle_key_press(self, key):
         for obstacle in self.obstacles:
             if key == obstacle.key:
                 if obstacle.is_trap:
-                    self.lives -= 1
                     sound_thread = threading.Thread(target=play_wrong_key_sound)
                     sound_thread.start()
                     rock_thread = threading.Thread(target=self.display_rock_image)
                     rock_thread.start()
                     if self.lives <= 0:
                         self.game_over = True
+                    self.lives -= 1
                 else:
                     self.score += 10
-                    self.player.next_frame()
-                    self.background.move()
+                    self.player.climb()  # Move the player up
+                    self.background.move(self.player.rect, HEIGHT)  # Move background down
+                    self.lava.moving_up = False  # Ensure lava starts moving down
+                    self.lava.move_down(50)  # Move lava down by 50 units
+
                 self.obstacles.remove(obstacle)
-                return
+                break
+
+    def log_positions(self):
+        player_pos = (self.player.rect.x, self.player.rect.y)
+        lava_pos = (self.lava.rect.x, self.lava.rect.y)
+        print(f"Player Position: {player_pos}, Lava Position: {lava_pos}")
+
+    def display_positions(self, screen):
+        player_pos_text = font.render(f"Player: {self.player.rect.topleft}", True, BLACK)
+        lava_pos_text = font.render(f"Lava: {self.lava.rect.topleft}", True, BLACK)
+        screen.blit(player_pos_text, (20, 100))
+        screen.blit(lava_pos_text, (20, 140))
 
     def pause_menu(self):
         paused = True
@@ -323,8 +339,10 @@ class Game:
                         obstacle.draw(screen, font)
 
                     self.player.draw(screen)
-                    self.lava.move_up(self.background.speed)
+                    self.lava.update_position()  # Update lava position smoothly
                     self.lava.draw(screen)
+
+                    self.background.move(self.player.rect, HEIGHT)
 
                     if self.rock_image and time.time() < self.rock_display_time:
                         screen.blit(self.rock_image, (
@@ -348,9 +366,15 @@ class Game:
                     lives_text = font.render(f"Lives: {self.lives}", True, BLACK)
                     screen.blit(lives_text, (20, 60))
 
-                    # Check for collision with lava
                     if self.player.rect.bottom > self.lava.rect.top:
                         self.game_over = True
+
+                    self.log_positions()
+                    self.display_positions(screen)
+
+                    # Increase lava speed based on score or time
+                    if self.score % 100 == 0 and self.score != 0:
+                        self.lava.increase_speed(0.1)
 
                 else:
                     self.display_game_over()
