@@ -5,6 +5,10 @@ import pygame
 import random
 import threading
 import json
+
+from model.Difficulty import Difficulty
+from model.DifficultySelector import DifficultySelector
+from model.Slider import Slider
 from model.Background import Background
 from model.Lava import Lava
 from model.Player import Player
@@ -16,11 +20,12 @@ os.environ['SDL_VIDEO_CENTERED'] = '1'
 # Keys
 AVAILABLE_KEYS = ["A", "S", "D", "W", "Z", "Q", "E", "R", "T", "Y", "U", "I", "O", "P", "F", "G", "H", "J", "K", "L", "X", "C", "V", "B", "N", "M"]
 MAX_ROCK_IMG = 4
-TAUX_PIEGES = 0.15
+TAUX_PIEGES = 0.2
 NB_VIES = 4
-MAX_BLACK_SQUARES = 20
-BLACK_SQUARE_SPAWN_RATE = 15
-LAVA_SPEED = 1
+MAX_BLACK_SQUARES = 20  # Decreased from 30
+MAX_OBSTACLES = 20  # Set the maximum number of obstacles
+BLACK_SQUARE_SPAWN_RATE = 20  # Increased from 10
+LAVA_SPEED = 0.5
 
 pygame.init()
 
@@ -70,6 +75,7 @@ class Game:
         self.clock = pygame.time.Clock()
         self.running = True
         self.available_keys = AVAILABLE_KEYS.copy()
+        self.difficulty = self.load_difficulty(self.settings.settings['difficulty'])
         self.rock_image = None
         self.game_over = False
         self.background = Background('./ressources/background.jpg', WIDTH, HEIGHT )
@@ -77,6 +83,40 @@ class Game:
         self.high_scores = self.load_scores()
         self.lava = Lava(WIDTH, HEIGHT, LAVA_SPEED, "./ressources/lava.jpg")
         self.apply_settings()
+        self.spawn_rate = self.get_initial_spawn_rate()
+        self.background_image = pygame.image.load('./ressources/menu.jpg')
+        self.background_image = pygame.transform.scale(self.background_image, (WIDTH, HEIGHT))
+    def get_initial_spawn_rate(self):
+        if self.difficulty == 'easy':
+            return 70  # Increased from 50
+        elif self.difficulty == 'medium':
+            return 50  # Increased from 30
+        elif self.difficulty == 'hard':
+            return 30  # Increased from 20
+        else:
+            return 50  # Default value in case of an unknown difficulty
+
+    def adjust_difficulty(self):
+        # Adjust spawn rate based on score and distance to lava
+        distance_to_lava = self.player.rect.bottom - self.lava.rect.top
+        if self.score < 100:
+            self.spawn_rate = self.get_initial_spawn_rate()
+        elif self.score < 200:
+            self.spawn_rate = max(10, self.spawn_rate - 1)
+        else:
+            self.spawn_rate = max(5, self.spawn_rate - 1)
+
+        if distance_to_lava < 100:
+            self.spawn_rate = max(5, self.spawn_rate - 2)
+
+    def load_difficulty(self, difficulty_name):
+        difficulties = {
+            'easy': Difficulty('easy', obstacle_speed=2, spawn_rate=70, lava_speed_increment=0.03),  # Decreased speed
+            'medium': Difficulty('medium', obstacle_speed=4, spawn_rate=50, lava_speed_increment=0.07),
+            # Decreased speed
+            'hard': Difficulty('hard', obstacle_speed=6, spawn_rate=30, lava_speed_increment=0.15)  # Decreased speed
+        }
+        return difficulties.get(difficulty_name, difficulties['medium'])
 
     def apply_settings(self):
         pygame.mixer.music.set_volume(self.settings.settings['volume'])
@@ -87,6 +127,16 @@ class Game:
             pygame.display.set_mode((WIDTH, HEIGHT), pygame.NOFRAME)
         else:
             pygame.display.set_mode((WIDTH, HEIGHT))
+
+        # Apply font size to obstacles text
+        global obstacle_font
+        obstacle_font = pygame.font.Font(None, int(self.settings.settings['font_size']))
+
+        # Apply square size to obstacles
+        self.obstacle_size = int(self.settings.settings['square_size'])
+
+        # Apply spawn rate from settings
+        self.spawn_rate = int(self.settings.settings.get('spawn_rate', BLACK_SQUARE_SPAWN_RATE))
 
     def load_scores(self):
         if not os.path.exists(self.scores_file):
@@ -109,30 +159,73 @@ class Game:
         except Exception as e:
             print(f"Error saving scores: {e}")
 
-    def update_high_scores(self):
-        self.high_scores.append(self.score)
-        self.high_scores = sorted(self.high_scores, reverse=True)[:10]  # Keep top 10 scores
-        self.save_scores()
+    def update_high_scores(new_score):
+        # Path to the scores file
+        scores_file = "scores.json"
+
+        try:
+            # Read existing scores
+            if os.path.exists(scores_file):
+                with open(scores_file, 'r') as f:
+                    scores = json.load(f)
+            else:
+                scores = []
+
+            # Add new score
+            scores.append(new_score)
+
+            # Sort scores in descending order
+            scores.sort(reverse=True)
+
+            # Keep only top 10 scores
+            scores = scores[:10]
+
+            # Save updated scores back to the file
+            with open(scores_file, 'w') as f:
+                json.dump(scores, f)
+
+            return scores
+
+        except Exception as e:
+            print(f"Error updating high scores: {e}")
+            return []
 
     def show_menu(self):
-        self.reset_game()
         menu_running = True
+        difficulty_selector = DifficultySelector(WIDTH // 2 - 100, HEIGHT // 2 + 150, 200, 40,
+                                                 ['easy', 'medium', 'hard'], self.settings.settings['difficulty'])
+
         while menu_running:
-            screen.fill(WHITE)
-            title_text = font.render("Jeu d'Escalade", True, BLACK)
-            start_text = font.render("Press ENTER to Start", True, BLACK)
-            settings_text = font.render("Press S for Settings", True, BLACK)
+            screen.blit(self.background_image, (0, 0))  # Draw the background image
+            title_text = font.render("Main Menu", True, BLACK)
+            start_text = font.render("Press S to Start", True, BLACK)
+            quit_text = font.render("Press Q to Quit", True, BLACK)
+            settings_text = font.render("Press T for Settings", True, BLACK)
 
             title_x = WIDTH // 2 - title_text.get_width() // 2
             title_y = HEIGHT // 2 - 200
             start_x = WIDTH // 2 - start_text.get_width() // 2
-            start_y = title_y + 150
+            start_y = HEIGHT // 2
+            quit_x = WIDTH // 2 - quit_text.get_width() // 2
+            quit_y = HEIGHT // 2 + 50
             settings_x = WIDTH // 2 - settings_text.get_width() // 2
-            settings_y = start_y + 50
+            settings_y = HEIGHT // 2 + 100
 
-            screen.blit(title_text, (title_x, title_y))
-            screen.blit(start_text, (start_x, start_y))
-            screen.blit(settings_text, (settings_x, settings_y))
+            # Function to draw text with border
+            def draw_text_with_border(text, x, y):
+                border_color = (255, 255, 255)  # White border color
+                screen.blit(font.render(text, True, border_color), (x - 2, y - 2))
+                screen.blit(font.render(text, True, border_color), (x + 2, y - 2))
+                screen.blit(font.render(text, True, border_color), (x - 2, y + 2))
+                screen.blit(font.render(text, True, border_color), (x + 2, y + 2))
+                screen.blit(font.render(text, True, BLACK), (x, y))  # Main text
+
+            draw_text_with_border("Main Menu", title_x, title_y)
+            draw_text_with_border("Press S to Start", start_x, start_y)
+            draw_text_with_border("Press Q to Quit", quit_x, quit_y)
+            draw_text_with_border("Press T for Settings", settings_x, settings_y)
+
+            difficulty_selector.draw(screen)
 
             pygame.display.flip()
 
@@ -141,12 +234,38 @@ class Game:
                     self.running = False
                     menu_running = False
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_RETURN:
-                        menu_running = False
                     if event.key == pygame.K_s:
+                        self.settings.settings['difficulty'] = difficulty_selector.get_current_difficulty()
+                        self.settings.save_settings()
+                        self.apply_settings()
+                        menu_running = False
+                    if event.key == pygame.K_q:
+                        self.running = False
+                        menu_running = False
+                    if event.key == pygame.K_t:
+                        self.show_settings_menu()
+                difficulty_selector.handle_event(event)
+
+                if event.type == pygame.MOUSEBUTTONDOWN:
+                    mouse_pos = event.pos
+                    if start_x <= mouse_pos[0] <= start_x + start_text.get_width() and start_y <= mouse_pos[
+                        1] <= start_y + start_text.get_height():
+                        self.settings.settings['difficulty'] = difficulty_selector.get_current_difficulty()
+                        self.settings.save_settings()
+                        self.apply_settings()
+                        menu_running = False
+                    if quit_x <= mouse_pos[0] <= quit_x + quit_text.get_width() and quit_y <= mouse_pos[
+                        1] <= quit_y + quit_text.get_height():
+                        self.running = False
+                        menu_running = False
+                    if settings_x <= mouse_pos[0] <= settings_x + settings_text.get_width() and settings_y <= mouse_pos[
+                        1] <= settings_y + settings_text.get_height():
                         self.show_settings_menu()
 
     def generate_obstacle(self):
+        if len(self.obstacles) >= MAX_OBSTACLES:
+            return  # Do not generate more obstacles if the limit is reached
+
         if not self.available_keys:
             self.available_keys = AVAILABLE_KEYS.copy()
         is_trap = random.random() < TAUX_PIEGES
@@ -157,12 +276,18 @@ class Game:
                 key = random.choice(available_keys_for_trap)
                 self.available_keys.remove(key)
             else:
-                key = random.choice(self.available_keys)
+                return  # No available keys for traps, skip generating this obstacle
         else:
             if len([obs for obs in self.obstacles if not obs.is_trap]) >= MAX_BLACK_SQUARES:
                 return
-            key = random.choice(self.available_keys)
-        self.obstacles.append(Obstacle(WIDTH, is_trap, key))
+            available_keys_for_correct = [key for key in self.available_keys if
+                                          key not in [obs.key for obs in self.obstacles if obs.is_trap]]
+            if available_keys_for_correct:
+                key = random.choice(available_keys_for_correct)
+                self.available_keys.remove(key)
+            else:
+                return  # No available keys for correct obstacles, skip generating this obstacle
+        self.obstacles.append(Obstacle(WIDTH, is_trap, key, self.obstacle_size, self.difficulty.obstacle_speed))
 
     def reset_game(self):
         self.update_high_scores()
@@ -209,11 +334,15 @@ class Game:
 
     def pause_menu(self):
         paused = True
+        # Create a semi-transparent overlay
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))  # Fill with black color and set transparency level (0-255)
+
         while paused:
-            screen.fill(WHITE)
-            pause_text = font.render("Paused", True, BLACK)
-            resume_text = font.render("Press ESC to Resume", True, BLACK)
-            main_menu_text = font.render("Press M for Main Menu", True, BLACK)
+            screen.blit(overlay, (0, 0))  # Draw the semi-transparent overlay
+            pause_text = font.render("Paused", True, (255, 255, 255))
+            resume_text = font.render("Press ESC to Resume", True, (255, 255, 255))
+            main_menu_text = font.render("Press M for Main Menu", True, (255, 255, 255))
             screen.blit(pause_text, (WIDTH // 2 - pause_text.get_width() // 2, HEIGHT // 2 - 50))
             screen.blit(resume_text, (WIDTH // 2 - resume_text.get_width() // 2, HEIGHT // 2))
             screen.blit(main_menu_text, (WIDTH // 2 - main_menu_text.get_width() // 2, HEIGHT // 2 + 50))
@@ -242,11 +371,11 @@ class Game:
             self.rock_image = None
 
     def display_game_over(self):
-        game_over_text = font.render("Game Over", True, RED)
-        restart_text = font.render("Press R to Restart", True, RED)
-        menu_text = font.render("Press M for Main Menu", True, RED)
-        user_score_text = font.render(f"Your Score: {self.score}", True, BLACK)
-        high_score_text = font.render(f"Highest Score: {self.high_scores[0]}", True, BLACK)
+        game_over_text = font.render("Fin de la partie", True, RED)
+        restart_text = font.render("Appuyer sur R pour redémarrer", True, RED)
+        menu_text = font.render("Appuyer sur M pour le menu", True, RED)
+        user_score_text = font.render(f"Votre score: {self.score}", True, BLACK)
+        high_score_text = font.render(f"Score le plus hau: {self.high_scores[0]}", True, BLACK)
 
         screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 2 - 100))
         screen.blit(user_score_text, (WIDTH // 2 - user_score_text.get_width() // 2, HEIGHT // 2 - 50))
@@ -257,35 +386,49 @@ class Game:
         pygame.display.flip()
 
     def show_settings_menu(self):
+        volume_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 - 50, 200, 20, 0.0, 1.0, self.settings.settings['volume'])
+        font_size_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2, 200, 20, 10, 100, self.settings.settings['font_size'])
+        square_size_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 + 50, 200, 20, 10, 100,
+                                    self.settings.settings['square_size'])
+
         settings_running = True
         while settings_running:
-            screen.fill(WHITE)
+            screen.blit(self.background_image, (0, 0))  # Draw the background image
             title_text = font.render("Settings", True, BLACK)
-            volume_text = font.render(f"Volume: {self.settings.settings['volume']}", True, BLACK)
-            font_size_text = font.render(f"Font Size: {self.settings.settings['font_size']}", True, BLACK)
-            square_size_text = font.render(f"Square Size: {self.settings.settings['square_size']}", True, BLACK)
-            display_mode_text = font.render(f"Display Mode: {self.settings.settings['display_mode']}", True, BLACK)
             back_text = font.render("Press B to go back", True, BLACK)
+            validate_text = font.render("Press V to Validate", True, BLACK)
 
             title_x = WIDTH // 2 - title_text.get_width() // 2
             title_y = HEIGHT // 2 - 200
-            volume_x = WIDTH // 2 - volume_text.get_width() // 2
-            volume_y = title_y + 50
-            font_size_x = WIDTH // 2 - font_size_text.get_width() // 2
-            font_size_y = volume_y + 50
-            square_size_x = WIDTH // 2 - square_size_text.get_width() // 2
-            square_size_y = font_size_y + 50
-            display_mode_x = WIDTH // 2 - display_mode_text.get_width() // 2
-            display_mode_y = square_size_y + 50
             back_x = WIDTH // 2 - back_text.get_width() // 2
-            back_y = display_mode_y + 100
+            back_y = HEIGHT // 2 + 200
+            validate_x = WIDTH // 2 - validate_text.get_width() // 2
+            validate_y = back_y + 50
 
-            screen.blit(title_text, (title_x, title_y))
-            screen.blit(volume_text, (volume_x, volume_y))
-            screen.blit(font_size_text, (font_size_x, font_size_y))
-            screen.blit(square_size_text, (square_size_x, square_size_y))
-            screen.blit(display_mode_text, (display_mode_x, display_mode_y))
-            screen.blit(back_text, (back_x, back_y))
+            # Function to draw text with border
+            def draw_text_with_border(text, x, y):
+                border_color = (255, 255, 255)  # White border color
+                screen.blit(font.render(text, True, border_color), (x - 2, y - 2))
+                screen.blit(font.render(text, True, border_color), (x + 2, y - 2))
+                screen.blit(font.render(text, True, border_color), (x - 2, y + 2))
+                screen.blit(font.render(text, True, border_color), (x + 2, y + 2))
+                screen.blit(font.render(text, True, BLACK), (x, y))  # Main text
+
+            draw_text_with_border("Settings", title_x, title_y)
+            draw_text_with_border("Press B to go back", back_x, back_y)
+            draw_text_with_border("Press V to Validate", validate_x, validate_y)
+
+            volume_slider.draw(screen)
+            font_size_slider.draw(screen)
+            square_size_slider.draw(screen)
+
+            volume_label = font.render(f"Volume: {volume_slider.value:.2f}", True, BLACK)
+            font_size_label = font.render(f"Font Size: {font_size_slider.value:.0f}", True, BLACK)
+            square_size_label = font.render(f"Square Size: {square_size_slider.value:.0f}", True, BLACK)
+
+            screen.blit(volume_label, (volume_slider.rect.x, volume_slider.rect.y - 30))
+            screen.blit(font_size_label, (font_size_slider.rect.x, font_size_slider.rect.y - 30))
+            screen.blit(square_size_label, (square_size_slider.rect.x, square_size_slider.rect.y - 30))
 
             pygame.display.flip()
 
@@ -296,26 +439,18 @@ class Game:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_b:
                         settings_running = False
-                    if event.key == pygame.K_UP:
-                        self.settings.settings['volume'] = min(self.settings.settings['volume'] + 0.1, 1.0)
-                    if event.key == pygame.K_DOWN:
-                        self.settings.settings['volume'] = max(self.settings.settings['volume'] - 0.1, 0.0)
-                    if event.key == pygame.K_LEFT:
-                        self.settings.settings['font_size'] = max(self.settings.settings['font_size'] - 1, 10)
-                    if event.key == pygame.K_RIGHT:
-                        self.settings.settings['font_size'] = min(self.settings.settings['font_size'] + 1, 100)
-                    if event.key == pygame.K_w:
-                        self.settings.settings['square_size'] = max(self.settings.settings['square_size'] - 1, 10)
-                    if event.key == pygame.K_s:
-                        self.settings.settings['square_size'] = min(self.settings.settings['square_size'] + 1, 100)
-                    if event.key == pygame.K_f:
-                        self.settings.settings['display_mode'] = 'fullscreen'
-                    if event.key == pygame.K_w:
-                        self.settings.settings['display_mode'] = 'windowed'
-                    if event.key == pygame.K_b:
-                        self.settings.settings['display_mode'] = 'borderless'
-                    self.settings.save_settings()
-                    self.apply_settings()
+                    if event.key == pygame.K_v:
+                        self.settings.settings['volume'] = volume_slider.value
+                        self.settings.settings['font_size'] = font_size_slider.value
+                        self.settings.settings['square_size'] = square_size_slider.value
+                        self.settings.save_settings()
+                        self.apply_settings()  # Apply the new settings
+                        print(
+                            f"Settings applied: Volume={volume_slider.value}, Font Size={font_size_slider.value}, Square Size={square_size_slider.value}")
+                        settings_running = False
+                volume_slider.handle_event(event)
+                font_size_slider.handle_event(event)
+                square_size_slider.handle_event(event)
 
     def run(self):
         try:
@@ -326,8 +461,9 @@ class Game:
                 if not self.game_over:
                     self.background.draw(screen)
 
-                    if random.randint(1, BLACK_SQUARE_SPAWN_RATE) == 1:
-                        self.generate_obstacle()
+                    self.adjust_difficulty()
+
+                    self.generate_obstacle()
 
                     for obstacle in self.obstacles:
                         obstacle.move_down()
@@ -374,7 +510,7 @@ class Game:
 
                     # Increase lava speed based on score or time
                     if self.score % 100 == 0 and self.score != 0:
-                        self.lava.increase_speed(0.1)
+                        self.lava.increase_speed(self.difficulty.lava_speed_increment)
 
                 else:
                     self.display_game_over()
