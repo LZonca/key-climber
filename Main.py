@@ -14,6 +14,7 @@ from model.Lava import Lava
 from model.Player import Player
 from model.Obstacle import Obstacle
 from model.Settings import Settings
+from model.InputBox import  InputBox
 
 os.environ['SDL_VIDEO_CENTERED'] = '1'
 
@@ -65,6 +66,7 @@ def play_faster_sound():
 def play_wrong_key_sound():
     wrong_key_sound.play()
 
+
 class Game:
     def __init__(self):
         self.settings = Settings('./settings.xml')
@@ -78,7 +80,7 @@ class Game:
         self.difficulty = self.load_difficulty(self.settings.settings['difficulty'])
         self.rock_image = None
         self.game_over = False
-        self.background = Background('./ressources/background.jpg', WIDTH, HEIGHT )
+        self.background = Background('./ressources/background.jpg', WIDTH, HEIGHT)
         self.scores_file = './scores.json'
         self.high_scores = self.load_scores()
         self.lava = Lava(WIDTH, HEIGHT, LAVA_SPEED, "./ressources/lava.jpg")
@@ -86,12 +88,90 @@ class Game:
         self.spawn_rate = self.get_initial_spawn_rate()
         self.background_image = pygame.image.load('./ressources/menu.jpg')
         self.background_image = pygame.transform.scale(self.background_image, (WIDTH, HEIGHT))
+        self.player_name = "Anonymous"  # Default player name
+
+    # Add this method to get player name
+    def get_player_name(self):
+        input_box = InputBox(WIDTH // 2 - 100, HEIGHT // 2, 200, 32, font)
+        input_box.active = True  # Activate the input box immediately
+        input_box.color = input_box.color_active  # Set active color
+
+        name_entered = False
+        overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+        overlay.fill((0, 0, 0, 200))  # Semi-transparent black
+
+        while not name_entered and self.running:
+            screen.blit(self.background_image, (0, 0))
+            screen.blit(overlay, (0, 0))  # Add overlay
+
+            prompt_text = font.render("Saisissez votre nom:", True, WHITE)
+            screen.blit(prompt_text, (WIDTH // 2 - prompt_text.get_width() // 2, HEIGHT // 2 - 50))
+
+            instruction_text = font.render("(Apuyer sur ENTRÉE pour valider)", True, WHITE)
+            screen.blit(instruction_text, (WIDTH // 2 - instruction_text.get_width() // 2, HEIGHT // 2 + 40))
+
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    self.running = False
+                    return "Annonyme"
+
+                result = input_box.handle_event(event)
+                if result is not None:  # Enter was pressed
+                    name_entered = True
+                    return result if result and result.strip() else "Annonyme"
+
+            input_box.update()
+            input_box.draw(screen)
+            pygame.display.flip()
+            self.clock.tick(30)
+
+        return input_box.text if input_box.text and input_box.text.strip() else "Annonyme"
+
+    def update_high_scores(self):
+        try:
+            if not os.path.exists(self.scores_file):
+                with open(self.scores_file, 'w') as file:
+                    json.dump([], file)
+
+            with open(self.scores_file, 'r') as file:
+                try:
+                    scores = json.load(file)
+                except json.JSONDecodeError:
+                    scores = []
+
+            # Add new entry with player name and difficulty
+            new_entry = {
+                "name": self.player_name,
+                "score": self.score,
+                "difficulty": self.settings.settings['difficulty']
+            }
+
+            # Only add if score is greater than 0
+            if self.score > 0:
+                scores.append(new_entry)
+
+            # Sort scores by score value in descending order
+            scores.sort(key=lambda x: x["score"] if isinstance(x, dict) else 0, reverse=True)
+
+            # Keep only top 10 scores
+            scores = scores[:10]
+
+            # Save updated scores
+            with open(self.scores_file, 'w') as file:
+                json.dump(scores, file)
+
+            self.high_scores = scores
+            return scores
+        except Exception as e:
+            print(f"Error updating high scores: {e}")
+            return []
+
     def get_initial_spawn_rate(self):
-        if self.difficulty == 'easy':
+        if self.difficulty == 'facile':
             return 70  # Increased from 50
-        elif self.difficulty == 'medium':
+        elif self.difficulty == 'moyen':
             return 50  # Increased from 30
-        elif self.difficulty == 'hard':
+        elif self.difficulty == 'difficile':
             return 30  # Increased from 20
         else:
             return 50  # Default value in case of an unknown difficulty
@@ -111,12 +191,12 @@ class Game:
 
     def load_difficulty(self, difficulty_name):
         difficulties = {
-            'easy': Difficulty('easy', obstacle_speed=2, spawn_rate=70, lava_speed_increment=0.03),  # Decreased speed
-            'medium': Difficulty('medium', obstacle_speed=4, spawn_rate=50, lava_speed_increment=0.07),
+            'facile': Difficulty('facile', obstacle_speed=2, spawn_rate=70, lava_speed_increment=0.03),  # Decreased speed
+            'moyen': Difficulty('moyen', obstacle_speed=4, spawn_rate=50, lava_speed_increment=0.07),
             # Decreased speed
-            'hard': Difficulty('hard', obstacle_speed=6, spawn_rate=30, lava_speed_increment=0.15)  # Decreased speed
+            'difficile': Difficulty('difficile', obstacle_speed=6, spawn_rate=30, lava_speed_increment=0.15)  # Decreased speed
         }
-        return difficulties.get(difficulty_name, difficulties['medium'])
+        return difficulties.get(difficulty_name, difficulties['moyen'])
 
     def apply_settings(self):
         pygame.mixer.music.set_volume(self.settings.settings['volume'])
@@ -139,17 +219,28 @@ class Game:
         self.spawn_rate = int(self.settings.settings.get('spawn_rate', BLACK_SQUARE_SPAWN_RATE))
 
     def load_scores(self):
-        if not os.path.exists(self.scores_file):
-            with open(self.scores_file, 'w') as file:
-                json.dump([0] * 10, file)
+        """Load scores from file with difficulty migration"""
         try:
-            with open(self.scores_file, 'r') as file:
-                scores = json.load(file)
-                if not scores:
-                    return [0] * 10
-                return scores
-        except (FileNotFoundError, json.JSONDecodeError):
-            return [0] * 10
+            if os.path.exists(self.scores_file):
+                with open(self.scores_file, 'r') as file:
+                    scores = json.load(file)
+
+                    # Migrate old scores without difficulty
+                    updated = False
+                    for score in scores:
+                        if isinstance(score, dict) and 'difficulty' not in score:
+                            score['difficulty'] = 'moyen'  # Default to medium
+                            updated = True
+
+                    if updated:
+                        with open(self.scores_file, 'w') as update_file:
+                            json.dump(scores, update_file)
+
+                    return scores
+            return []
+        except Exception as e:
+            print(f"Error loading scores: {e}")
+            return []
 
     def save_scores(self):
         try:
@@ -159,48 +250,23 @@ class Game:
         except Exception as e:
             print(f"Error saving scores: {e}")
 
-    def update_high_scores(new_score):
-        # Path to the scores file
-        scores_file = "scores.json"
-
-        try:
-            # Read existing scores
-            if os.path.exists(scores_file):
-                with open(scores_file, 'r') as f:
-                    scores = json.load(f)
-            else:
-                scores = []
-
-            # Add new score
-            scores.append(new_score)
-
-            # Sort scores in descending order
-            scores.sort(reverse=True)
-
-            # Keep only top 10 scores
-            scores = scores[:10]
-
-            # Save updated scores back to the file
-            with open(scores_file, 'w') as f:
-                json.dump(scores, f)
-
-            return scores
-
-        except Exception as e:
-            print(f"Error updating high scores: {e}")
-            return []
-
     def show_menu(self):
+        self.reset_game()
         menu_running = True
         difficulty_selector = DifficultySelector(WIDTH // 2 - 100, HEIGHT // 2 + 150, 200, 40,
-                                                 ['easy', 'medium', 'hard'], self.settings.settings['difficulty'])
+                                                 ['facile', 'moyen', 'difficile'],
+                                                 self.settings.settings['difficulty'])
 
         while menu_running:
             screen.blit(self.background_image, (0, 0))  # Draw the background image
-            title_text = font.render("Main Menu", True, BLACK)
-            start_text = font.render("Press S to Start", True, BLACK)
-            quit_text = font.render("Press Q to Quit", True, BLACK)
-            settings_text = font.render("Press T for Settings", True, BLACK)
+            title_text = font.render("Menu Principal", True, BLACK)
+            start_text = font.render("Appuyez sur S pour Commencer", True, BLACK)
+            quit_text = font.render("Appuyez sur Q pour Quitter", True, BLACK)
+            settings_text = font.render("Appuyez sur T pour les Paramètres", True, BLACK)
+
+            # Show current player name
+            player_text = font.render(f"Joueur: {self.player_name}", True, BLACK)
+            change_name_text = font.render("Appuyez sur N pour Changer le Nom", True, BLACK)
 
             title_x = WIDTH // 2 - title_text.get_width() // 2
             title_y = HEIGHT // 2 - 200
@@ -210,6 +276,10 @@ class Game:
             quit_y = HEIGHT // 2 + 50
             settings_x = WIDTH // 2 - settings_text.get_width() // 2
             settings_y = HEIGHT // 2 + 100
+            player_x = WIDTH // 2 - player_text.get_width() // 2
+            player_y = HEIGHT // 2 - 100
+            change_name_x = WIDTH // 2 - change_name_text.get_width() // 2
+            change_name_y = HEIGHT // 2 - 50
 
             # Function to draw text with border
             def draw_text_with_border(text, x, y):
@@ -220,10 +290,12 @@ class Game:
                 screen.blit(font.render(text, True, border_color), (x + 2, y + 2))
                 screen.blit(font.render(text, True, BLACK), (x, y))  # Main text
 
-            draw_text_with_border("Main Menu", title_x, title_y)
-            draw_text_with_border("Press S to Start", start_x, start_y)
-            draw_text_with_border("Press Q to Quit", quit_x, quit_y)
-            draw_text_with_border("Press T for Settings", settings_x, settings_y)
+            draw_text_with_border("Menu Principal", title_x, title_y)
+            draw_text_with_border(f"Joueur: {self.player_name}", player_x, player_y)
+            draw_text_with_border("Appuyez sur N pour Changer le Nom", change_name_x, change_name_y)
+            draw_text_with_border("Appuyez sur S pour Commencer", start_x, start_y)
+            draw_text_with_border("Appuyez sur Q pour Quitter", quit_x, quit_y)
+            draw_text_with_border("Appuyez sur T pour les Paramètres", settings_x, settings_y)
 
             difficulty_selector.draw(screen)
 
@@ -234,6 +306,8 @@ class Game:
                     self.running = False
                     menu_running = False
                 if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_n:
+                        self.player_name = self.get_player_name()
                     if event.key == pygame.K_s:
                         self.settings.settings['difficulty'] = difficulty_selector.get_current_difficulty()
                         self.settings.save_settings()
@@ -261,44 +335,68 @@ class Game:
                     if settings_x <= mouse_pos[0] <= settings_x + settings_text.get_width() and settings_y <= mouse_pos[
                         1] <= settings_y + settings_text.get_height():
                         self.show_settings_menu()
+                    if change_name_x <= mouse_pos[
+                        0] <= change_name_x + change_name_text.get_width() and change_name_y <= mouse_pos[
+                        1] <= change_name_y + change_name_text.get_height():
+                        self.player_name = self.get_player_name()
 
     def generate_obstacle(self):
         if len(self.obstacles) >= MAX_OBSTACLES:
             return  # Do not generate more obstacles if the limit is reached
 
-        if not self.available_keys:
-            self.available_keys = AVAILABLE_KEYS.copy()
-        is_trap = random.random() < TAUX_PIEGES
+        # Count current traps and non-traps
+        current_traps = sum(1 for obs in self.obstacles if obs.is_trap)
+        current_regular = sum(1 for obs in self.obstacles if not obs.is_trap)
+
+        # Force generation of regular obstacles if there are too few
+        force_regular = current_regular < 5 or current_traps > current_regular * 2
+
+        # Determine if this should be a trap based on ratio and forcing
+        is_trap = random.random() < TAUX_PIEGES and not force_regular
+
+
+        if is_trap and current_traps >= MAX_OBSTACLES // 3:
+            is_trap = False  # Convert to regular if too many traps
+        elif not is_trap and current_regular >= MAX_BLACK_SQUARES:
+            return
+
+
         if is_trap:
-            available_keys_for_trap = [key for key in self.available_keys if
-                                       key not in [obs.key for obs in self.obstacles if not obs.is_trap]]
-            if available_keys_for_trap:
-                key = random.choice(available_keys_for_trap)
-                self.available_keys.remove(key)
-            else:
-                return  # No available keys for traps, skip generating this obstacle
+            available_keys = [key for key in self.available_keys
+                              if key not in [obs.key for obs in self.obstacles]]
         else:
-            if len([obs for obs in self.obstacles if not obs.is_trap]) >= MAX_BLACK_SQUARES:
-                return
-            available_keys_for_correct = [key for key in self.available_keys if
-                                          key not in [obs.key for obs in self.obstacles if obs.is_trap]]
-            if available_keys_for_correct:
-                key = random.choice(available_keys_for_correct)
-                self.available_keys.remove(key)
-            else:
-                return  # No available keys for correct obstacles, skip generating this obstacle
-        self.obstacles.append(Obstacle(WIDTH, is_trap, key, self.obstacle_size, self.difficulty.obstacle_speed))
+            available_keys = [key for key in self.available_keys
+                              if key not in [obs.key for obs in self.obstacles]]
+
+        if not available_keys:
+            # Reset available keys if none left
+            self.available_keys = AVAILABLE_KEYS.copy()
+            available_keys = self.available_keys
+
+        # Select a key and create the obstacle
+        key = random.choice(available_keys)
+        self.available_keys.remove(key)
+        self.obstacles.append(Obstacle(WIDTH, is_trap, key,
+                                       self.obstacle_size, self.difficulty.obstacle_speed))
 
     def reset_game(self):
-        self.update_high_scores()
-        self.player = Player(WIDTH, HEIGHT)
-        self.obstacles = []
+        """Completely reset the game state for a new game"""
+        self.update_high_scores()  # Save current score
+        self.player = Player(WIDTH, HEIGHT)  # Reset player position
+        self.obstacles.clear()  # Clear all obstacles
         self.score = 0
         self.lives = NB_VIES
         self.available_keys = AVAILABLE_KEYS.copy()
         self.rock_image = None
+        self.rock_display_time = 0
         self.game_over = False
-        self.lava.reset_position()
+
+        # Reset lava
+        self.lava = Lava(WIDTH, HEIGHT, LAVA_SPEED, "./ressources/lava.jpg")
+
+        # Reset difficulty settings
+        self.difficulty = self.load_difficulty(self.settings.settings['difficulty'])
+        self.spawn_rate = self.get_initial_spawn_rate()
 
     def handle_key_press(self, key):
         for obstacle in self.obstacles:
@@ -375,7 +473,30 @@ class Game:
         restart_text = font.render("Appuyer sur R pour redémarrer", True, RED)
         menu_text = font.render("Appuyer sur M pour le menu", True, RED)
         user_score_text = font.render(f"Votre score: {self.score}", True, BLACK)
-        high_score_text = font.render(f"Score le plus hau: {self.high_scores[0]}", True, BLACK)
+
+        current_difficulty = self.settings.settings['difficulty']
+
+        # Find best score for current difficulty
+        filtered_scores = [s for s in self.high_scores if
+                           isinstance(s, dict) and
+                           s.get('difficulty', current_difficulty) == current_difficulty]
+
+        if filtered_scores:
+            top_score = filtered_scores[0]
+            high_score_text = font.render(
+                f"Meilleur score ({current_difficulty}): {top_score['score']} par {top_score['name']}",
+                True, BLACK)
+        else:
+            high_score_text = font.render(f"Pas encore de score pour {current_difficulty}", True, BLACK)
+
+        # Also show overall best score regardless of difficulty
+        if self.high_scores and isinstance(self.high_scores[0], dict):
+            overall_best = self.high_scores[0]
+            overall_difficulty = overall_best.get('difficulty', 'unknown')
+            overall_text = font.render(
+                f"Record absolu: {overall_best['score']} par {overall_best['name']} ({overall_difficulty})",
+                True, BLACK)
+            screen.blit(overall_text, (WIDTH // 2 - overall_text.get_width() // 2, HEIGHT // 2 - 25))
 
         screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 2 - 100))
         screen.blit(user_score_text, (WIDTH // 2 - user_score_text.get_width() // 2, HEIGHT // 2 - 50))
@@ -454,16 +575,50 @@ class Game:
 
     def run(self):
         try:
+            self.reset_game()
             self.show_menu()
+            self.death_animation = None
+
+            # Load death sound
+            death_sound = pygame.mixer.Sound('./ressources/death.mp3')
+            death_sound_played = False
+
             while self.running:
                 screen.fill(WHITE)
 
-                if not self.game_over:
-                    self.background.draw(screen)
+                if self.death_animation and not self.death_animation.done:
+                    # Update and draw death animation
+                    self.death_animation.update()
+                    self.death_animation.draw(screen)
 
+                    # Play death sound once when animation starts
+                    if not death_sound_played:
+                        death_sound.play()
+                        death_sound_played = True
+
+                    # Handle events during animation
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            self.running = False
+                        if event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_r:
+                                self.reset_game()
+                                self.death_animation = None
+                                death_sound_played = False
+                            if event.key == pygame.K_m:
+                                self.show_menu()
+                                self.reset_game()
+                                self.death_animation = None
+                                death_sound_played = False
+
+                elif not self.game_over:
+                    # Normal game logic
+                    self.background.draw(screen)
                     self.adjust_difficulty()
 
-                    self.generate_obstacle()
+                    # Only generate new obstacles if not game over
+                    if random.randint(0, self.spawn_rate) == 0:
+                        self.generate_obstacle()
 
                     for obstacle in self.obstacles:
                         obstacle.move_down()
@@ -499,11 +654,20 @@ class Game:
                     score_text = font.render(f"Score: {self.score}", True, BLACK)
                     screen.blit(score_text, (20, 20))
 
-                    lives_text = font.render(f"Lives: {self.lives}", True, BLACK)
+                    lives_text = font.render(f"Vies: {self.lives}", True, BLACK)
                     screen.blit(lives_text, (20, 60))
 
                     if self.player.rect.bottom > self.lava.rect.top:
+                        # Player touched lava - start lava death animation
+                        from model.Animation import Animation
+                        self.death_animation = Animation('./ressources/lavaloose.gif', WIDTH, HEIGHT)
                         self.game_over = True
+                        death_sound_played = False  # Reset flag for new death
+
+                    # Check if lives are depleted
+                    if self.lives <= 0 and not self.game_over:
+                        self.game_over = True
+                        death_sound.play()  # Play death sound when lives are depleted
 
                     self.log_positions()
                     self.display_positions(screen)
@@ -513,19 +677,29 @@ class Game:
                         self.lava.increase_speed(self.difficulty.lava_speed_increment)
 
                 else:
-                    self.display_game_over()
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            self.running = False
-                        if event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_r:
-                                self.reset_game()
-                            if event.key == pygame.K_m:
-                                self.show_menu()
-                                self.reset_game()
+                    # Only show game over screen if animation is complete or not playing
+                    if not self.death_animation or self.death_animation.done:
+                        self.display_game_over()
+
+                        # Play death sound if animation is not used (e.g., when lives run out)
+                        if not self.death_animation and not death_sound_played:
+                            death_sound.play()
+                            death_sound_played = True
+
+                        for event in pygame.event.get():
+                            if event.type == pygame.QUIT:
+                                self.running = False
+                            if event.type == pygame.KEYDOWN:
+                                if event.key == pygame.K_r:
+                                    self.reset_game()
+                                    death_sound_played = False
+                                if event.key == pygame.K_m:
+                                    self.show_menu()
+                                    self.reset_game()
+                                    death_sound_played = False
 
                 pygame.display.flip()
-                self.clock.tick(20)
+                self.clock.tick(30)  # Increased frame rate for smoother animation
         except KeyboardInterrupt:
             print("Game interrupted by user.")
         finally:
