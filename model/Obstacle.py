@@ -14,12 +14,15 @@ class Obstacle:
         self.pos = [random.randint(0, width - size), -size]
         self.color = (255, 0, 0) if is_trap else (0, 0, 0)
         self.speed = speed
+        self.speed = speed
+        self.tutorial = False
 
         # Add a subtle border for traps to make them more distinguishable
         self.border_color = (139, 0, 0) if self.is_trap else (50, 50, 50)
 
     def move_down(self):
-        self.pos[1] += self.speed
+        if not self.tutorial and self.speed > 0:
+            self.pos[1] += self.speed
 
     def draw(self, screen, font):
         pygame.draw.rect(screen, self.color, (*self.pos, self.size, self.size))

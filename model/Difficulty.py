@@ -1,7 +1,9 @@
 # model/Difficulty.py
 class Difficulty:
-    def __init__(self, name, obstacle_speed, spawn_rate, lava_speed_increment):
+    def __init__(self, name, obstacle_speed, spawn_rate, lava_speed_increment, lava_start_delay, initial_obstacles):
         self.name = name
         self.obstacle_speed = obstacle_speed
         self.spawn_rate = spawn_rate
         self.lava_speed_increment = lava_speed_increment
+        self.lava_start_delay = lava_start_delay  # Seconds before lava starts moving
+        self.initial_obstacles = initial_obstacles  # Number of obstacles to spawn at start

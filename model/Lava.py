@@ -8,13 +8,26 @@ class Lava:
         self.target_position = self.rect.y
         self.image = pygame.image.load(image_path)
         self.original_image = self.image
+        self.start_delay = 0  # Default to 0 seconds
+        self.start_time = pygame.time.get_ticks()
+        self.moving_enabled = False
+
+    def set_start_delay(self, delay_seconds):
+        self.start_delay = delay_seconds * 1000  # Convert to milliseconds
+        self.start_time = pygame.time.get_ticks()
+        self.moving_enabled = False
 
     def update_position(self):
+
+        if not self.moving_enabled:
+            if pygame.time.get_ticks() - self.start_time >= self.start_delay:
+                self.moving_enabled = True
+
         if self.moving_up:
             self.rect.y -= self.speed
         else:
             if self.rect.y < self.target_position:
-                self.rect.y += self.speed
+                self.rect.y += self.speed * 0.1
             else:
                 self.moving_up = True
 
