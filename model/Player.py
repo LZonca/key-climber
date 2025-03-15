@@ -13,7 +13,7 @@ class Player:
         self.rect.centerx = window_width // 2
         self.rect.centery = window_height // 2  # Center the player vertically
 
-        self.climbing_speed = 5  # Adjust the speed value
+        self.climbing_speed = 10  # Adjust the speed value
 
     def draw(self, screen):
         screen.blit(self.image, self.rect)

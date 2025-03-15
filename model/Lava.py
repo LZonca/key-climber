@@ -2,7 +2,9 @@ import pygame
 
 class Lava:
     def __init__(self, width, height, speed, image_path):
-        self.rect = pygame.Rect(0, height - 50, width, 50)
+        # Position the lava at the bottom of the screen, visible
+        screen_height = pygame.display.Info().current_h
+        self.rect = pygame.Rect(0, screen_height - 50, width, 50)
         self.speed = speed
         self.moving_up = True
         self.target_position = self.rect.y
@@ -13,27 +15,47 @@ class Lava:
         self.moving_enabled = False
 
     def set_start_delay(self, delay_seconds):
-        self.start_delay = delay_seconds * 1000  # Convert to milliseconds
+        self.start_delay = delay_seconds
         self.start_time = pygame.time.get_ticks()
         self.moving_enabled = False
 
     def update_position(self):
-
+        # Check if the delay period has passed
         if not self.moving_enabled:
-            if pygame.time.get_ticks() - self.start_time >= self.start_delay:
+            if pygame.time.get_ticks() - self.start_time >= self.start_delay * 1000:
                 self.moving_enabled = True
+                return  # Don't move on the first frame when enabled
 
-        if self.moving_up:
-            self.rect.y -= self.speed
-        else:
-            if self.rect.y < self.target_position:
-                self.rect.y += self.speed * 0.1
+        # Only move if movement is enabled
+        if self.moving_enabled:
+            if self.moving_up:
+                # Moving up logic
+                self.rect.y -= self.speed
+                # Check if lava has reached too high, then start moving down
+                if self.rect.y <= 0:  # Prevent going above screen
+                    self.rect.y = 0
+                    self.moving_up = False
+                    self.target_position = pygame.display.Info().current_h - 50
             else:
-                self.moving_up = True
+                # Moving down logic
+                if self.rect.y < self.target_position:
+                    self.rect.y += self.speed * 2  # Move down faster
+                    # Debug print
+                    print(f"Moving down: {self.rect.y}/{self.target_position}")
+                else:
+                    # We've reached or passed the target position, switch direction
+                    print("Reached target position, switching to moving up")
+                    self.rect.y = min(self.rect.y, self.target_position)  # Make sure we don't go too far
+                    self.moving_up = True  # Start moving up again
 
     def move_down(self, amount):
-        self.target_position = min(self.rect.y + amount, pygame.display.Info().current_h - 50)
+        current_y = self.rect.y
+        self.target_position = min(current_y + amount, pygame.display.Info().current_h - 50)
         self.moving_up = False
+        self.moving_enabled = True  # Ensure movement is enabled
+
+        # Debug print to verify movement
+        print(f"Moving lava down: current={current_y}, target={self.target_position}")
 
     def increase_speed(self, increment):
         self.speed += increment

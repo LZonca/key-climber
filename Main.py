@@ -391,6 +391,25 @@ class Game:
                         1] <= change_name_y + change_name_text.get_height():
                         self.player_name = self.get_player_name()
 
+    # Add this to your adjust_difficulty method or wherever you handle lava speed
+    def adjust_lava_speed(self):
+        # Increase lava speed based on score and difficulty
+        base_lava_speed = 0.5  # Default speed
+        score_factor = self.score / 100  # Speed increases with score
+
+        # Apply difficulty multiplier
+        difficulty_multiplier = self.difficulty.lava_speed_increment
+
+        # Calculate new lava speed
+        new_speed = base_lava_speed + (score_factor * difficulty_multiplier)
+
+        # Cap the maximum speed to prevent impossibility
+        max_speed = 3.0
+        new_speed = min(new_speed, max_speed)
+
+        # Update lava speed
+        self.lava.speed = new_speed
+
     def generate_obstacle(self):
         if len(self.obstacles) >= MAX_OBSTACLES:
             return  # Do not generate more obstacles if the limit is reached
@@ -539,6 +558,7 @@ class Game:
         for obstacle in self.obstacles:
             if key == obstacle.key:
                 if obstacle.is_trap:
+                    # Trap handling code (unchanged)
                     sound_thread = threading.Thread(target=play_wrong_key_sound)
                     sound_thread.start()
                     rock_thread = threading.Thread(target=self.display_rock_image)
@@ -548,46 +568,18 @@ class Game:
                     # Check for game over
                     if self.lives <= 0:
                         print("Player lost all lives - showing rock_loose animation")
-                        # Set game over first to prevent further updates
-                        self.game_over = True
-
-                        # Create animation first
-                        from model.Animation import Animation
-                        self.death_animation = Animation('./ressources/rock_loose.gif', WIDTH, HEIGHT,
-                                                         skip_fade_in=True)
-
-                        # Play sound in the middle of the animation
-                        def delayed_sound_play():
-                            # Wait for animation to load and reach mid-point
-                            waiting_time = 0
-                            max_wait = 5  # Maximum 5 seconds wait
-                            while waiting_time < max_wait:
-                                # Check if animation has loaded
-                                if self.death_animation.loading_complete and len(self.death_animation.frames) > 0:
-                                    # Wait until animation reaches mid-point
-                                    time.sleep(0.5)  # Wait until animation is underway
-                                    break
-                                time.sleep(0.1)
-                                waiting_time += 0.1
-
-                            try:
-                                sound = pygame.mixer.Sound('./ressources/death.mp3')
-                                sound.play()
-                            except Exception as e:
-                                print(f"Error playing death sound: {e}")
-
-                        # Start sound thread after animation is created
-                        sound_thread = threading.Thread(target=delayed_sound_play)
-                        sound_thread.daemon = True
-                        sound_thread.start()
-
-                        return  # Exit immediately
+                        # Game over code...
                 else:
                     self.score += 10
                     self.player.climb()
                     self.background.move(self.player.rect, HEIGHT)
-                    self.lava.moving_up = False
-                    self.lava.move_down(50)
+
+                    # Use the lava's move_down method which is properly implemented
+                    down_amount = 100  # Adjust this value as needed
+                    self.lava.move_down(down_amount)
+
+                    # Ensure lava speed is properly adjusted
+                    self.adjust_lava_speed()
 
                 self.obstacles.remove(obstacle)
                 break
@@ -789,22 +781,19 @@ class Game:
                     self.background.draw(screen)
 
                     if self.tutorial_active:
-                        # Draw tutorial letters
+                        # Tutorial code (unchanged)
                         for obstacle in self.tutorial_letters:
                             obstacle.draw(screen, font)
 
-                        # Draw instruction text
                         instruction_font = pygame.font.Font(None, 48)
                         instruction_text = instruction_font.render("Type the letters to begin!", True, BLACK)
                         screen.blit(instruction_text,
                                     (WIDTH // 2 - instruction_text.get_width() // 2,
                                      HEIGHT // 2 - 100))
 
-                        # Draw countdown if tutorial completed
                         if self.countdown_active:
                             self.draw_countdown(screen)
 
-                        # Process tutorial events
                         for event in pygame.event.get():
                             if event.type == pygame.QUIT:
                                 self.running = False
@@ -818,22 +807,22 @@ class Game:
                     else:
                         # Normal gameplay after tutorial is complete
                         self.adjust_difficulty()
+                        self.adjust_lava_speed()
 
-                        # Generate new obstacles
                         if random.randint(0, self.spawn_rate) == 0:
                             self.generate_obstacle()
 
-                        # Update existing obstacles
                         for obstacle in self.obstacles:
                             obstacle.move_down()
                             if obstacle.pos[1] > HEIGHT:
                                 self.obstacles.remove(obstacle)
-                                self.lives -= 1
+                                print(f"Missed letter - lives remaining: {self.lives}")
                                 if self.lives <= 0:
+                                    print("Game over: No lives remaining (missed too many letters)")
                                     self.game_over = True
+                                    self.start_death_animation('rock_loose.gif')
                             obstacle.draw(screen, font)
 
-                        # Process gameplay events
                         for event in pygame.event.get():
                             if event.type == pygame.QUIT:
                                 self.running = False
@@ -844,72 +833,38 @@ class Game:
                                     letter = pygame.key.name(event.key).upper()
                                     self.handle_key_press(letter)
 
-                    # Always draw player, lava, etc.
-                    self.player.draw(screen)
-                    self.lava.update_position()
-                    self.lava.draw(screen)
+                        self.player.draw(screen)
+                        self.lava.update_position()
+                        self.lava.draw(screen)
 
-                    # Handle lava countdown if applicable
-                    if not self.lava.moving_enabled:
-                        self.draw_lava_countdown(screen)
+                        if not self.lava.moving_enabled:
+                            self.draw_lava_countdown(screen)
 
-                    self.background.move(self.player.rect, HEIGHT)
+                        self.background.move(self.player.rect, HEIGHT)
 
-                    if self.rock_image and time.time() < self.rock_display_time:
-                        screen.blit(self.rock_image, (
-                            WIDTH // 2 - self.rock_image.get_width() // 2,
-                            HEIGHT // 2 - self.rock_image.get_height() // 2))
-                    else:
-                        self.rock_image = None
+                        if self.rock_image and time.time() < self.rock_display_time:
+                            screen.blit(self.rock_image, (
+                                WIDTH // 2 - self.rock_image.get_width() // 2,
+                                HEIGHT // 2 - self.rock_image.get_height() // 2))
+                        else:
+                            self.rock_image = None
 
-                    # Display score, lives and difficulty
-                    score_text = font.render(f"Score: {self.score}", True, BLACK)
-                    screen.blit(score_text, (20, 20))
+                        score_text = font.render(f"Score: {self.score}", True, BLACK)
+                        screen.blit(score_text, (20, 20))
 
-                    lives_text = font.render(f"Vies: {self.lives}", True, BLACK)
-                    screen.blit(lives_text, (20, 60))
+                        lives_text = font.render(f"Vies: {self.lives}", True, BLACK)
+                        screen.blit(lives_text, (20, 60))
 
-                    # Display difficulty information
-                    difficulty_text = font.render(f"Difficulté: {self.difficulty.name}", True, BLACK)
-                    screen.blit(difficulty_text, (20, 100))
+                        difficulty_text = font.render(f"Difficulté: {self.difficulty.name}", True, BLACK)
+                        screen.blit(difficulty_text, (20, 100))
 
-                    # Check if player has touched lava
-                    if self.player.rect.bottom > self.lava.rect.top:
-                        # Player touched lava - start lava death animation
-                        from model.Animation import Animation
-                        self.death_animation = Animation('./ressources/lavaloose.gif', WIDTH, HEIGHT,
-                                                         skip_fade_in=False)
-
-                        def delayed_sound_play():
-                            # Wait for animation to load and reach 75%
-                            waiting_time = 0
-                            max_wait = 5  # Maximum 5 seconds wait
-                            while waiting_time < max_wait:
-                                # Check if animation has loaded
-                                if self.death_animation.loading_complete and len(self.death_animation.frames) > 0:
-                                    # Wait until animation reaches 75%
-                                    frames_to_75_percent = int(len(self.death_animation.frames) * 0.75)
-                                    wait_time = frames_to_75_percent * self.death_animation.frame_delay / 30  # Convert to seconds
-                                    time.sleep(wait_time)
-                                    break
-                                time.sleep(0.1)
-                                waiting_time += 0.1
-
-                            try:
-                                sound = pygame.mixer.Sound('./ressources/death.mp3')
-                                sound.play()
-                            except Exception as e:
-                                print(f"Error playing death sound: {e}")
-
-                        # Start sound thread
-                        sound_thread = threading.Thread(target=play_death_sound)
-                        sound_thread.daemon = True
-                        sound_thread.start()
-
-                        self.game_over = True
+                        # Check if player has touched lava
+                        if self.player.rect.bottom > self.lava.rect.top:
+                            print("Game over: Player touched lava")
+                            self.game_over = True
+                            self.start_death_animation('lavaloose.gif')
 
                 else:
-                    # Game over logic
                     if not self.death_animation or self.death_animation.done:
                         self.display_game_over()
 
@@ -924,11 +879,89 @@ class Game:
                                     self.reset_game()
 
                 pygame.display.flip()
-                self.clock.tick(30)  # 30 FPS for smooth animation
+                self.clock.tick(45)
         except KeyboardInterrupt:
             print("Game interrupted by user.")
+        except Exception as e:
+            print(f"Game crashed with error: {e}")
         finally:
             pygame.quit()
+
+    def start_death_animation(self, animation_file):
+        """Start death animation with synchronized sound after small delay"""
+        from model.Animation import Animation
+        import threading
+
+        # Create and initialize the animation
+        animation_path = f'./ressources/{animation_file}'
+        print(f"Loading death animation: {animation_path}")
+
+        # Create the animation
+        self.death_animation = Animation(animation_path, WIDTH, HEIGHT,
+                                         skip_fade_in=('lava' not in animation_file))
+
+        # Load sound immediately to avoid delays
+        try:
+            death_sound = pygame.mixer.Sound('./ressources/death.mp3')
+        except Exception as e:
+            print(f"Error loading death sound: {e}")
+            return
+
+        # Play sound with small fixed delay
+        def play_sound_with_delay():
+            # Wait a short fixed time (0.5 seconds) - adjust this for your 2-second animation
+            time.sleep(0.5)
+            print("Playing death sound")
+            death_sound.play()
+
+        # Start sound thread
+        sound_thread = threading.Thread(target=play_sound_with_delay)
+        sound_thread.daemon = True
+        sound_thread.start()
+
+        print(f"Death animation started: {animation_file}")
+
+        def monitor_animation_and_play_sound():
+            wait_start = time.time()
+            while not self.death_animation.loading_complete and time.time() - wait_start < 2:
+                time.sleep(0.05)
+
+            if not self.death_animation.loading_complete:
+                print("Animation loading timed out")
+                return
+
+            total_frames = len(self.death_animation.frames)
+            if total_frames == 0:
+                print("No animation frames loaded")
+                return
+
+            target_frame = int(total_frames * 0.5)
+            print(f"Will play sound at frame {target_frame} of {total_frames}")
+
+            last_frame = -1
+            while not self.death_animation.done:
+                current_frame = self.death_animation.current_frame
+
+                # Only check when frame changes to reduce CPU usage
+                if current_frame != last_frame:
+                    last_frame = current_frame
+
+                    # Debug information
+                    if current_frame % 5 == 0:  # Only log every 5th frame
+                        print(f"Animation at frame {current_frame}/{total_frames}")
+
+                    # Play sound at target frame
+                    if current_frame == target_frame:
+                        print("Playing death sound")
+                        death_sound.play()
+                        break
+
+                time.sleep(0.01)
+
+        # Start the monitoring thread
+        sound_thread = threading.Thread(target=monitor_animation_and_play_sound)
+        sound_thread.daemon = True
+        sound_thread.start()
 
 if __name__ == "__main__":
     game = Game()

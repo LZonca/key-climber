@@ -14,12 +14,12 @@ class Animation:
         self.delay_counter = 0
         self.done = False
         self.alpha = 255 if skip_fade_in else 0  # Full opacity if skip_fade_in is True
-        self.fade_speed = 5
+        self.fade_speed = 3
         self.fade_in = not skip_fade_in  # Skip fade-in if requested
         self.complete_loops = 0
         self.max_loops = 1  # Play only once
         self.fade_out_started = False
-        self.min_display_frames = 10
+        self.min_display_frames = 5
         self.displayed_frames = 0
         self.loading_complete = False
         self.loading_thread = None
@@ -40,27 +40,25 @@ class Animation:
             # Set thread priority higher
             import os
             try:
-                os.nice(-10)  # Lower nice value = higher priority (Unix-like systems)
+                os.nice(-10)
             except (OSError, AttributeError):
-                pass  # Ignore if not supported on Windows
+                pass
 
-            # Open the GIF file with PIL
             gif = Image.open(self.filepath)
             temp_frames = []
             frame_count = 0
 
-            # Iterate through all frames
             try:
                 while True:
-                    # Convert to RGBA
+
                     frame = gif.convert("RGBA")
 
-                    # Convert PIL image to Pygame surface
+
                     frame_data = frame.tobytes()
                     frame_size = frame.size
                     pygame_frame = pygame.image.fromstring(frame_data, frame_size, "RGBA")
 
-                    # Scale the image to fit the screen
+
                     scaled_frame = pygame.transform.scale(pygame_frame, (self.screen_width, self.screen_height))
                     temp_frames.append(scaled_frame)
 
@@ -73,15 +71,12 @@ class Animation:
                 pass
 
             self.frame_count = frame_count
-            self.frames = temp_frames  # Atomically assign all frames at once
+            self.frames = temp_frames
 
-            # Set appropriate frame delay - use a minimum of 2 to ensure animation is visible
             if hasattr(gif, 'info') and 'duration' in gif.info:
-                # Convert from ms to frames but ensure it's not too quick
                 self.frame_delay = max(2, int(gif.info['duration'] / 33))
                 print(f"Setting frame delay to {self.frame_delay} based on GIF duration")
             else:
-                # Default to a reasonable speed if no duration info
                 self.frame_delay = 2
 
             # Ensure minimum display time is adequate

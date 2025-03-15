@@ -5,5 +5,5 @@ class Difficulty:
         self.obstacle_speed = obstacle_speed
         self.spawn_rate = spawn_rate
         self.lava_speed_increment = lava_speed_increment
-        self.lava_start_delay = lava_start_delay  # Seconds before lava starts moving
-        self.initial_obstacles = initial_obstacles  # Number of obstacles to spawn at start
+        self.lava_start_delay = lava_start_delay
+        self.initial_obstacles = initial_obstacles
