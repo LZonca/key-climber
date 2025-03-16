@@ -93,7 +93,7 @@ class Game:
         self.background_image = pygame.image.load('./ressources/menu.jpg')
         self.background_image = pygame.transform.scale(self.background_image, (WIDTH, HEIGHT))
         self.player_name = "Anonymous"  # Default player name
-        self.score_api = ScoreAPI("http://localhost:8000/api")
+        self.score_api = ScoreAPI("https://keyscale.lzonca.fr/api")
         try:
             icon = pygame.image.load('./ressources/menu.jpg')
             pygame.display.set_icon(icon)

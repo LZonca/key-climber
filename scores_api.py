@@ -12,7 +12,7 @@ logger = logging.getLogger('ScoreAPI')
 
 
 class ScoreAPI:
-    def __init__(self, base_url="http://localhost:8000/api", max_retries=3, retry_delay=1):
+    def __init__(self, base_url="https://keyscale.lzonca.fr/api", max_retries=3, retry_delay=1):
         self.base_url = base_url
         self.max_retries = max_retries
         self.retry_delay = retry_delay
