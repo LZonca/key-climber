@@ -7,6 +7,7 @@ import threading
 import json
 import math
 
+import pygame.transform
 from model.Difficulty import Difficulty
 from model.DifficultySelector import DifficultySelector
 from model.Slider import Slider
@@ -77,6 +78,8 @@ class Game:
         self.player = Player(WIDTH, HEIGHT)
         self.obstacles = []
         self.score = 0
+        self.previous_score = 0
+        self.score_animation = 0
         self.lives = NB_VIES
         self.clock = pygame.time.Clock()
         self.running = True
@@ -101,51 +104,123 @@ class Game:
             print(f"Error loading application icon: {e}")
 
     def play_menu_music(self):
-        """Plays a random menu music that's different from the last one played"""
-        # Stop any currently playing music
         pygame.mixer.music.stop()
 
-        # List of available menu music files
         menu_music_options = ['./ressources/menu_musique1.mp3', './ressources/menu_musique2.mp3']
 
-        # Choose a music that's different from the last one
         if self.menu_music_history in menu_music_options and len(menu_music_options) > 1:
             menu_music_options.remove(self.menu_music_history)
 
-        # Select from remaining options
         selected_music = random.choice(menu_music_options)
         self.menu_music_history = selected_music
 
-        # Play the selected music with menu music volume
         pygame.mixer.music.load(selected_music)
         pygame.mixer.music.set_volume(self.settings.settings['menu_music_volume'])
-        pygame.mixer.music.play(-1)  # Loop indefinitely
+        pygame.mixer.music.play(-1)
+
+    def draw_hud(self, screen):
+
+        circle_radius = 15
+        circle_spacing = 40
+        start_x = 20
+        start_y = 20
+
+
+        for i in range(NB_VIES):
+            circle_x = start_x + (i * circle_spacing) + circle_radius
+            circle_y = start_y + circle_radius
+
+            if i < self.lives:
+                gradient_color = (255, 100, 100)
+                pygame.draw.circle(screen, gradient_color, (circle_x, circle_y), circle_radius)
+                pygame.draw.circle(screen, (255, 150, 150), (circle_x - 3, circle_y - 3), circle_radius - 5)
+            else:
+                pygame.draw.circle(screen, (100, 100, 100), (circle_x, circle_y), circle_radius, 2)
+
+        if not hasattr(self, 'previous_score'):
+            self.previous_score = 0
+            self.score_animation = 0
+
+        if self.score > self.previous_score:
+            self.score_animation = 10
+            self.previous_score = self.score
+
+        score_size = 48 + self.score_animation
+
+        if self.score_animation > 0:
+            self.score_animation -= 0.5
+
+        score_font = pygame.font.Font(None, int(score_size))
+
+        score_bg_width = 200
+        score_bg_height = 60
+        score_bg_rect = pygame.Rect(
+            WIDTH - score_bg_width - 10,
+            10,
+            score_bg_width,
+            score_bg_height
+        )
+
+
+        score_bg = pygame.Surface((score_bg_width, score_bg_height), pygame.SRCALPHA)
+        score_bg.fill((0, 0, 0, 100))
+        screen.blit(score_bg, score_bg_rect)
+
+        if self.score < 100:
+            score_color = (255, 255, 255)
+        elif self.score < 500:
+            score_color = (255, 255, 0)
+        elif self.score < 1000:
+            score_color = (255, 165, 0)
+        else:
+            score_color = (255, 215, 0)
+
+        if self.score_animation > 0:
+            pulse = (math.sin(pygame.time.get_ticks() * 0.01) + 1) * 0.5
+            glow_intensity = int(100 * pulse)
+
+            if score_color[0] > 200:
+                glow_color = (200, 200, 255)
+            else:
+                glow_color = (255, 255, 255)
+
+
+            for offset in range(3, 0, -1):
+                glow_text = score_font.render(f"Score: {self.score}", True, glow_color)
+                screen.blit(glow_text, (WIDTH - glow_text.get_width() - 20 + offset, 20 + offset))
+
+
+        score_text = score_font.render(f"Score: {self.score}", True, score_color)
+
+
+        shadow_text = score_font.render(f"Score: {self.score}", True, (0, 0, 0))
+        screen.blit(shadow_text, (WIDTH - score_text.get_width() - 19, 21))
+
+
+        screen.blit(score_text, (WIDTH - score_text.get_width() - 20, 20))
 
     def play_sound_effect(self, sound):
-        """Play a sound effect with the proper volume setting"""
         sound.set_volume(self.settings.settings['sound_effects_volume'])
         sound.play()
 
     def play_game_music(self):
-        """Switches to game music"""
         pygame.mixer.music.stop()
         pygame.mixer.music.load('./ressources/musique.mp3')
         pygame.mixer.music.set_volume(self.settings.settings['game_music_volume'])
-        pygame.mixer.music.play(-1)  # Loop indefinitely
+        pygame.mixer.music.play(-1)
 
-    # Add this method to get player name
     def get_player_name(self):
         input_box = InputBox(WIDTH // 2 - 100, HEIGHT // 2, 200, 32, font)
-        input_box.active = True  # Activate the input box immediately
-        input_box.color = input_box.color_active  # Set active color
+        input_box.active = True
+        input_box.color = input_box.color_active
 
         name_entered = False
         overlay = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
-        overlay.fill((0, 0, 0, 200))  # Semi-transparent black
+        overlay.fill((0, 0, 0, 200))
 
         while not name_entered and self.running:
             screen.blit(self.background_image, (0, 0))
-            screen.blit(overlay, (0, 0))  # Add overlay
+            screen.blit(overlay, (0, 0))
 
             prompt_text = font.render("Saisissez votre nom:", True, WHITE)
             screen.blit(prompt_text, (WIDTH // 2 - prompt_text.get_width() // 2, HEIGHT // 2 - 50))
@@ -159,7 +234,7 @@ class Game:
                     return "Annonyme"
 
                 result = input_box.handle_event(event)
-                if result is not None:  # Enter was pressed
+                if result is not None:
                     name_entered = True
                     return result if result and result.strip() else "Annonyme"
 
@@ -172,8 +247,8 @@ class Game:
 
     def update_high_scores(self):
         try:
-            # First attempt to save score to the API
-            if self.score > 0:  # Only send scores greater than 0
+
+            if self.score > 0:
                 api_success = self.score_api.save_game_score(
                     name=self.player_name,
                     score=self.score,
@@ -181,16 +256,14 @@ class Game:
                 )
 
                 if api_success:
-                    # If API save was successful, get updated scores from API
                     try:
                         self.high_scores = self.score_api.get_game_scores()
                         print("Scores successfully retrieved from API")
                         return self.high_scores
                     except Exception as e:
                         print(f"Couldn't retrieve scores from API: {e}")
-                        # Continue to local file method as fallback
 
-            # Fallback to local file if API failed or score was 0
+
             if not os.path.exists(self.scores_file):
                 with open(self.scores_file, 'w') as file:
                     json.dump([], file)
@@ -208,10 +281,8 @@ class Game:
 
                 scores.sort(key=lambda x: x["score"] if isinstance(x, dict) else 0, reverse=True)
 
-                # Keep only top 10 scores
                 scores = scores[:10]
 
-                # Save updated scores
                 with open(self.scores_file, 'w') as file:
                     json.dump(scores, file)
 
@@ -222,9 +293,7 @@ class Game:
             return []
 
     def load_scores(self):
-        """Load scores from API with fallback to local file"""
         try:
-            # Try to load from API first
             try:
                 api_scores = self.score_api.get_game_scores()
                 if api_scores:
@@ -375,7 +444,6 @@ class Game:
             quit_text = font.render("Appuyez sur Q pour Quitter", True, BLACK)
             settings_text = font.render("Appuyez sur T pour les Paramètres", True, BLACK)
 
-            # Show current player name
             player_text = font.render(f"Joueur: {self.player_name}", True, BLACK)
             change_name_text = font.render("Appuyez sur N pour Changer le Nom", True, BLACK)
 
@@ -392,7 +460,6 @@ class Game:
             change_name_x = WIDTH // 2 - change_name_text.get_width() // 2
             change_name_y = HEIGHT // 2 - 50
 
-            # Function to draw text with border
             def draw_text_with_border(text, x, y):
                 border_color = (255, 255, 255)  # White border color
                 screen.blit(font.render(text, True, border_color), (x - 2, y - 2))
@@ -453,19 +520,14 @@ class Game:
                         1] <= change_name_y + change_name_text.get_height():
                         self.player_name = self.get_player_name()
 
-    # Add this to your adjust_difficulty method or wherever you handle lava speed
     def adjust_lava_speed(self):
-        # Increase lava speed based on score and difficulty
-        base_lava_speed = 0.5  # Default speed
-        score_factor = self.score / 100  # Speed increases with score
+        base_lava_speed = 0.5
+        score_factor = self.score / 100
 
-        # Apply difficulty multiplier
         difficulty_multiplier = self.difficulty.lava_speed_increment
 
-        # Calculate new lava speed
         new_speed = base_lava_speed + (score_factor * difficulty_multiplier)
 
-        # Cap the maximum speed to prevent impossibility
         max_speed = 3.0
         new_speed = min(new_speed, max_speed)
 
@@ -474,21 +536,21 @@ class Game:
 
     def generate_obstacle(self):
         if len(self.obstacles) >= MAX_OBSTACLES:
-            return  # Do not generate more obstacles if the limit is reached
+            return
 
-        # Count current traps and non-traps
+
         current_traps = sum(1 for obs in self.obstacles if obs.is_trap)
         current_regular = sum(1 for obs in self.obstacles if not obs.is_trap)
 
-        # Force generation of regular obstacles if there are too few
+
         force_regular = current_regular < 5 or current_traps > current_regular * 2
 
-        # Determine if this should be a trap based on ratio and forcing
+
         is_trap = random.random() < TAUX_PIEGES and not force_regular
 
 
         if is_trap and current_traps >= MAX_OBSTACLES // 3:
-            is_trap = False  # Convert to regular if too many traps
+            is_trap = False
         elif not is_trap and current_regular >= MAX_BLACK_SQUARES:
             return
 
@@ -501,48 +563,42 @@ class Game:
                               if key not in [obs.key for obs in self.obstacles]]
 
         if not available_keys:
-            # Reset available keys if none left
+
             self.available_keys = AVAILABLE_KEYS.copy()
             available_keys = self.available_keys
 
-        # Select a key and create the obstacle
+
         key = random.choice(available_keys)
         self.available_keys.remove(key)
         self.obstacles.append(Obstacle(WIDTH, is_trap, key,
                                        self.obstacle_size, self.difficulty.obstacle_speed))
 
     def create_tutorial(self):
-        """Create tutorial letters spelling 'TYPE!'"""
         tutorial_word = "APPUYER!"
         letter_width = self.obstacle_size
         total_width = len(tutorial_word) * letter_width * 1.5  # 1.5 for spacing
         start_x = (WIDTH - total_width) // 2
 
         for i, letter in enumerate(tutorial_word):
-            obstacle = Obstacle(WIDTH, False, letter, self.obstacle_size, 0)  # Speed 0 = static
-            obstacle.pos = [start_x + i * letter_width * 1.5, HEIGHT // 3]  # Position in upper third
-            obstacle.tutorial = True  # Mark as tutorial letter
+            obstacle = Obstacle(WIDTH, False, letter, self.obstacle_size, 0)
+            obstacle.pos = [start_x + i * letter_width * 1.5, HEIGHT // 3]
+            obstacle.tutorial = True
             self.tutorial_letters.append(obstacle)
 
     def handle_tutorial_key_press(self, key):
-        """Handle key presses during tutorial"""
-        for obstacle in self.tutorial_letters[:]:  # Use slice to avoid modification during iteration
+        for obstacle in self.tutorial_letters[:]:
             if key == obstacle.key:
-                # Remove the letter and check if tutorial is complete
                 self.tutorial_letters.remove(obstacle)
 
-                # Play climb sound effect
                 self.player.climb()
 
                 if not self.tutorial_letters:
-                    # All tutorial letters cleared
                     self.tutorial_completed = True
                     self.countdown_start_time = pygame.time.get_ticks()
                     self.countdown_active = True
                 return
 
     def draw_countdown(self, screen):
-        """Draw countdown after tutorial completion"""
         if not self.countdown_active:
             return
 
@@ -562,7 +618,6 @@ class Game:
                      self.player.rect.bottom + 100))
 
     def reset_game(self):
-        """Completely reset the game state for a new game"""
         self.update_high_scores()
         self.player = Player(WIDTH, HEIGHT)
         self.obstacles.clear()
@@ -584,23 +639,18 @@ class Game:
         self.difficulty = self.load_difficulty(self.settings.settings['difficulty'])
         self.spawn_rate = self.get_initial_spawn_rate()
 
-        # Reset lava with the appropriate delay and speed from difficulty
         self.lava = Lava(WIDTH, HEIGHT, self.difficulty.lava_speed, "./ressources/lava.jpg")
         self.lava.set_start_delay(self.difficulty.lava_start_delay)
 
-        # Create tutorial letters
         self.create_tutorial()
 
-        # Initialize menu music history if not already set
         if not hasattr(self, 'menu_music_history'):
             self.menu_music_history = None
 
     def spawn_initial_obstacles(self):
-        """Spawn a batch of initial obstacles based on difficulty setting"""
         for _ in range(self.difficulty.initial_obstacles):
             self.generate_obstacle()
 
-            # Spread the obstacles vertically
             if self.obstacles:
                 last_obstacle = self.obstacles[-1]
                 last_obstacle.pos[1] = random.randint(100, HEIGHT // 2)  # Place in upper half of screen
@@ -615,7 +665,6 @@ class Game:
         for obstacle in self.obstacles:
             if key == obstacle.key:
                 if obstacle.is_trap:
-                    # Trap handling code (unchanged)
                     sound_thread = threading.Thread(target=lambda: self.play_sound_effect(wrong_key_sound))
                     sound_thread.start()
                     rock_thread = threading.Thread(target=self.display_rock_image)
@@ -967,14 +1016,7 @@ class Game:
                         else:
                             self.rock_image = None
 
-                        score_text = font.render(f"Score: {self.score}", True, BLACK)
-                        screen.blit(score_text, (20, 20))
-
-                        lives_text = font.render(f"Vies: {self.lives}", True, BLACK)
-                        screen.blit(lives_text, (20, 60))
-
-                        difficulty_text = font.render(f"Difficulté: {self.difficulty.name}", True, BLACK)
-                        screen.blit(difficulty_text, (20, 100))
+                        self.draw_hud(screen)
 
                         # Check if player has touched lava
                         if self.player.rect.bottom > self.lava.rect.top:
