@@ -1,0 +1,118 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{hyperref}
+
+\title{Description du Jeu: KeyScale}
+\author{Documentation LaTeX}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+\textit{KeyScale} est un jeu d'arcade développé en Python avec Pygame où le joueur doit taper des lettres qui apparaissent à l'écran pour grimper et échapper à la lave montante. Le jeu combine les mécaniques de dactylographie et de réflexes pour créer une expérience à la fois éducative et divertissante.
+
+\section{Mécaniques de Jeu}
+
+\subsection{Concept Principal}
+Le joueur contrôle un personnage qui doit grimper pour éviter la lave qui monte progressivement à l'écran. Pour grimper, le joueur doit taper les lettres qui apparaissent dans des carrés. Chaque lettre correctement tapée fait monter le personnage et éloigne temporairement la lave.
+
+\subsection{Éléments de Jeu}
+\begin{itemize}
+    \item \textbf{Lettres à taper:} Des carrés contenant des lettres aléatoires apparaissent et descendent à l'écran.
+    \item \textbf{Pièges:} Certains carrés sont des pièges qui, lorsqu'activés, font tomber des rochers et coûtent une vie au joueur.
+    \item \textbf{Lave:} Un élément qui monte progressivement et que le joueur doit éviter.
+    \item \textbf{Vies:} Le joueur dispose d'un nombre limité de vies (4 par défaut).
+    \item \textbf{Score:} Augmente à chaque lettre correctement tapée.
+\end{itemize}
+
+\subsection{Niveaux de Difficulté}
+Le jeu propose trois niveaux de difficulté:
+\begin{itemize}
+    \item \textbf{Facile:} Lave plus lente, plus de délai avant son apparition, lettres plus espacées.
+    \item \textbf{Moyen:} Vitesse modérée, délai moyen avant l'apparition de la lave.
+    \item \textbf{Difficile:} Lave rapide, peu de délai, lettres plus fréquentes.
+\end{itemize}
+
+\section{Version Console (CLI)}
+En plus de la version graphique, \textit{KeyScale} propose une version en ligne de commande (CLI) qui conserve l'essence du jeu tout en utilisant une interface textuelle.
+
+\subsection{Principe du Mode CLI}
+Dans cette version minimaliste, le joueur est confronté à une expérience de dactylographie pure:
+\begin{itemize}
+    \item Des lettres apparaissent aléatoirement dans la console
+    \item Le joueur doit taper ces lettres le plus rapidement possible
+    \item Le temps de réaction est mesuré pour chaque lettre
+    \item Un score est calculé en fonction de la vitesse et de la précision
+\end{itemize}
+
+\subsection{Fonctionnalités Spécifiques à la Version CLI}
+\begin{itemize}
+    \item \textbf{Visibilité du temps:} Affichage du temps écoulé pour chaque saisie
+    \item \textbf{Mode entrainement:} Possibilité de s'exercer sur des combinaisons de lettres spécifiques
+    \item \textbf{Statistiques détaillées:} Analyse des performances par touche du clavier
+    \item \textbf{Accessibilité:} Compatible avec les lecteurs d'écran pour les malvoyants
+\end{itemize}
+
+\subsection{Avantages du Mode CLI}
+Cette version alternative offre plusieurs avantages:
+\begin{itemize}
+    \item Utilisation possible sur des systèmes aux ressources limitées
+    \item Concentration maximale sur les compétences de frappe sans distraction visuelle
+    \item Excellente option pour l'entraînement dactylographique pur
+    \item Possibilité de l'utiliser via SSH ou sur des terminaux distants
+\end{itemize}
+
+\section{Interface Utilisateur}
+
+\subsection{Écrans Principaux}
+\begin{itemize}
+    \item \textbf{Menu Principal:} Permet de commencer une partie, changer les paramètres ou quitter.
+    \item \textbf{Écran de Jeu:} Affiche le personnage, les lettres, la lave, le score et les vies.
+    \item \textbf{Paramètres:} Permet d'ajuster le volume, la taille de police et la taille des carrés.
+    \item \textbf{Fin de Partie:} Affiche le score final et les meilleurs scores, avec une animation spéciale pour les nouveaux records.
+    \item \textbf{Tutoriel:} Guide les nouveaux joueurs avec des instructions simples.
+\end{itemize}
+
+\subsection{Animations et Effets}
+Le jeu intègre plusieurs animations et effets visuels:
+\begin{itemize}
+    \item Animations de mort (chute dans la lave ou épuisement des vies)
+    \item Effets de texte animés pour les nouveaux records
+    \item Affichage des rochers lorsque le joueur active un piège
+\end{itemize}
+
+\section{Aspects Techniques}
+
+\subsection{Technologies Utilisées}
+\begin{itemize}
+    \item \textbf{Langage:} Python
+    \item \textbf{Bibliothèque graphique:} Pygame
+    \item \textbf{Multithread:} Utilisé pour les sons et les animations
+    \item \textbf{Stockage:} Fichiers JSON pour les scores, XML pour les paramètres
+\end{itemize}
+
+\subsection{Architecture}
+Le jeu est structuré selon une architecture orientée objet avec séparation des modèles:
+\begin{itemize}
+    \item \textbf{Modèles:} Player, Obstacle, Lava, Animation, etc.
+    \item \textbf{Contrôleur:} Classe Game qui coordonne la logique et les interactions
+    \item \textbf{Interface:} Menus et affichages gérés par des méthodes spécifiques
+\end{itemize}
+
+\section{Personnalisation}
+Les joueurs peuvent personnaliser leur expérience via:
+\begin{itemize}
+    \item Réglages du volume pour la musique de menu, musique de jeu et effets sonores
+    \item Taille de police des lettres
+    \item Taille des obstacles
+    \item Choix de la difficulté
+    \item Nom du joueur pour les records
+\end{itemize}
+
+\end{document}

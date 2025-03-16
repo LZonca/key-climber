@@ -5,6 +5,7 @@ import pygame
 import random
 import threading
 import json
+import math
 
 from model.Difficulty import Difficulty
 from model.DifficultySelector import DifficultySelector
@@ -15,6 +16,7 @@ from model.Player import Player
 from model.Obstacle import Obstacle
 from model.Settings import Settings
 from model.InputBox import  InputBox
+from scores_api import ScoreAPI
 
 os.environ['SDL_VIDEO_CENTERED'] = '1'
 
@@ -34,7 +36,7 @@ screen_info = pygame.display.Info()
 WIDTH, HEIGHT = screen_info.current_w, screen_info.current_h
 
 screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.NOFRAME)
-pygame.display.set_caption("Jeu d'Escalade")
+pygame.display.set_caption("KeyScale")
 
 screen_rect = screen.get_rect()
 screen_center = (pygame.display.Info().current_w // 2 - screen_rect.width // 2,
@@ -61,9 +63,11 @@ music_thread = threading.Thread(target=play_music)
 music_thread.start()
 
 def play_faster_sound():
+    faster_sound.set_volume(game.settings.settings['sound_effects_volume'])
     faster_sound.play()
 
 def play_wrong_key_sound():
+    wrong_key_sound.set_volume(game.settings.settings['sound_effects_volume'])
     wrong_key_sound.play()
 
 
@@ -83,12 +87,18 @@ class Game:
         self.background = Background('./ressources/background.jpg', WIDTH, HEIGHT)
         self.scores_file = './scores.json'
         self.high_scores = self.load_scores()
-        self.lava = Lava(WIDTH, HEIGHT, LAVA_SPEED, "./ressources/lava.jpg")
+        self.lava = Lava(WIDTH, HEIGHT, self.difficulty.lava_speed, "./ressources/lava.jpg")
         self.apply_settings()
         self.spawn_rate = self.get_initial_spawn_rate()
         self.background_image = pygame.image.load('./ressources/menu.jpg')
         self.background_image = pygame.transform.scale(self.background_image, (WIDTH, HEIGHT))
         self.player_name = "Anonymous"  # Default player name
+        self.score_api = ScoreAPI("http://localhost:8000/api")
+        try:
+            icon = pygame.image.load('./ressources/menu.jpg')
+            pygame.display.set_icon(icon)
+        except Exception as e:
+            print(f"Error loading application icon: {e}")
 
     def play_menu_music(self):
         """Plays a random menu music that's different from the last one played"""
@@ -106,16 +116,21 @@ class Game:
         selected_music = random.choice(menu_music_options)
         self.menu_music_history = selected_music
 
-        # Play the selected music
+        # Play the selected music with menu music volume
         pygame.mixer.music.load(selected_music)
-        pygame.mixer.music.set_volume(self.settings.settings['volume'])
+        pygame.mixer.music.set_volume(self.settings.settings['menu_music_volume'])
         pygame.mixer.music.play(-1)  # Loop indefinitely
+
+    def play_sound_effect(self, sound):
+        """Play a sound effect with the proper volume setting"""
+        sound.set_volume(self.settings.settings['sound_effects_volume'])
+        sound.play()
 
     def play_game_music(self):
         """Switches to game music"""
         pygame.mixer.music.stop()
         pygame.mixer.music.load('./ressources/musique.mp3')
-        pygame.mixer.music.set_volume(self.settings.settings['volume'])
+        pygame.mixer.music.set_volume(self.settings.settings['game_music_volume'])
         pygame.mixer.music.play(-1)  # Loop indefinitely
 
     # Add this method to get player name
@@ -157,41 +172,76 @@ class Game:
 
     def update_high_scores(self):
         try:
+            # First attempt to save score to the API
+            if self.score > 0:  # Only send scores greater than 0
+                api_success = self.score_api.save_game_score(
+                    name=self.player_name,
+                    score=self.score,
+                    difficulty=self.settings.settings['difficulty']
+                )
+
+                if api_success:
+                    # If API save was successful, get updated scores from API
+                    try:
+                        self.high_scores = self.score_api.get_game_scores()
+                        print("Scores successfully retrieved from API")
+                        return self.high_scores
+                    except Exception as e:
+                        print(f"Couldn't retrieve scores from API: {e}")
+                        # Continue to local file method as fallback
+
+            # Fallback to local file if API failed or score was 0
             if not os.path.exists(self.scores_file):
                 with open(self.scores_file, 'w') as file:
                     json.dump([], file)
 
             with open(self.scores_file, 'r') as file:
-                try:
-                    scores = json.load(file)
-                except json.JSONDecodeError:
-                    scores = []
+                scores = json.load(file)
 
-            # Add new entry with player name and difficulty
-            new_entry = {
-                "name": self.player_name,
-                "score": self.score,
-                "difficulty": self.settings.settings['difficulty']
-            }
-
-            # Only add if score is greater than 0
             if self.score > 0:
+                new_entry = {
+                    "name": self.player_name,
+                    "score": self.score,
+                    "difficulty": self.settings.settings['difficulty']
+                }
                 scores.append(new_entry)
 
-            # Sort scores by score value in descending order
-            scores.sort(key=lambda x: x["score"] if isinstance(x, dict) else 0, reverse=True)
+                scores.sort(key=lambda x: x["score"] if isinstance(x, dict) else 0, reverse=True)
 
-            # Keep only top 10 scores
-            scores = scores[:10]
+                # Keep only top 10 scores
+                scores = scores[:10]
 
-            # Save updated scores
-            with open(self.scores_file, 'w') as file:
-                json.dump(scores, file)
+                # Save updated scores
+                with open(self.scores_file, 'w') as file:
+                    json.dump(scores, file)
 
             self.high_scores = scores
             return scores
         except Exception as e:
             print(f"Error updating high scores: {e}")
+            return []
+
+    def load_scores(self):
+        """Load scores from API with fallback to local file"""
+        try:
+            # Try to load from API first
+            try:
+                api_scores = self.score_api.get_game_scores()
+                if api_scores:
+                    print("Scores loaded from API")
+                    return api_scores
+            except Exception as e:
+                print(f"Failed to load scores from API: {e}")
+                print("Falling back to local scores")
+
+            # Fallback to local file
+            if os.path.exists(self.scores_file):
+                with open(self.scores_file, 'r') as file:
+                    scores = json.load(file)
+                    return scores
+            return []
+        except Exception as e:
+            print(f"Error loading scores: {e}")
             return []
 
     def get_initial_spawn_rate(self):
@@ -224,8 +274,9 @@ class Game:
                 obstacle_speed=2,
                 spawn_rate=50,  # Make letters appear more frequently on easy
                 lava_speed_increment=0.03,
-                lava_start_delay=8.0,  # 8 seconds delay before lava starts moving
-                initial_obstacles=10  # Spawn 10 obstacles at the start
+                lava_start_delay=10.0,  # 8 seconds delay before lava starts moving
+                initial_obstacles=10,  # Spawn 10 obstacles at the start
+                lava_speed=0.3  # Slower lava speed for easy difficulty
             ),
             'moyen': Difficulty(
                 'moyen',
@@ -233,7 +284,8 @@ class Game:
                 spawn_rate=50,
                 lava_speed_increment=0.07,
                 lava_start_delay=5.0,  # 5 seconds delay
-                initial_obstacles=5
+                initial_obstacles=8,
+                lava_speed=0.5  # Medium lava speed
             ),
             'difficile': Difficulty(
                 'difficile',
@@ -241,20 +293,19 @@ class Game:
                 spawn_rate=30,
                 lava_speed_increment=0.15,
                 lava_start_delay=2.0,  # 2 seconds delay
-                initial_obstacles=3
+                initial_obstacles=5,
+                lava_speed=0.8  # Faster lava speed for hard difficulty
             )
         }
         return difficulties.get(difficulty_name, difficulties['moyen'])
 
     def apply_settings(self):
-        pygame.mixer.music.set_volume(self.settings.settings['volume'])
-        display_mode = self.settings.settings['display_mode']
-        if display_mode == 'fullscreen':
-            pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
-        elif display_mode == 'borderless':
-            pygame.display.set_mode((WIDTH, HEIGHT), pygame.NOFRAME)
+        """Apply settings from the settings object"""
+        # Apply display settings
+        if self.settings.settings['display_mode'] == 'fullscreen':
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.FULLSCREEN)
         else:
-            pygame.display.set_mode((WIDTH, HEIGHT))
+            self.screen = pygame.display.set_mode((WIDTH, HEIGHT))
 
         # Apply font size to obstacles text
         global obstacle_font
@@ -265,6 +316,17 @@ class Game:
 
         # Apply spawn rate from settings
         self.spawn_rate = int(self.settings.settings.get('spawn_rate', BLACK_SQUARE_SPAWN_RATE))
+
+        # Apply correct volume based on what's currently playing
+        if pygame.mixer.music.get_busy():
+            # Check if we're in menu or game
+            if hasattr(self, 'menu_music_history') and self.menu_music_history and \
+                    ('menu_musique' in self.menu_music_history):
+                # Menu music is playing
+                pygame.mixer.music.set_volume(self.settings.settings['menu_music_volume'])
+            else:
+                # Game music is playing
+                pygame.mixer.music.set_volume(self.settings.settings['game_music_volume'])
 
     def load_scores(self):
         """Load scores from file with difficulty migration"""
@@ -451,7 +513,7 @@ class Game:
 
     def create_tutorial(self):
         """Create tutorial letters spelling 'TYPE!'"""
-        tutorial_word = "TYPE!"
+        tutorial_word = "APPUYER!"
         letter_width = self.obstacle_size
         total_width = len(tutorial_word) * letter_width * 1.5  # 1.5 for spacing
         start_x = (WIDTH - total_width) // 2
@@ -488,47 +550,42 @@ class Game:
         remaining = 3 - elapsed
 
         if remaining <= 0:
-            # Countdown finished
             self.countdown_active = False
             self.tutorial_active = False
             return
 
-        # Draw a large countdown number below the player
         countdown_font = pygame.font.Font(None, 150)
         countdown_text = countdown_font.render(str(remaining), True, RED)
 
-        # Position below the player (adding a 100px offset)
         screen.blit(countdown_text,
                     (WIDTH // 2 - countdown_text.get_width() // 2,
                      self.player.rect.bottom + 100))
 
     def reset_game(self):
         """Completely reset the game state for a new game"""
-        self.update_high_scores()  # Save current score
-        self.player = Player(WIDTH, HEIGHT)  # Reset player position
-        self.obstacles.clear()  # Clear all obstacles
+        self.update_high_scores()
+        self.player = Player(WIDTH, HEIGHT)
+        self.obstacles.clear()
         self.score = 0
-        self.previous_score = 0  # Add this line to initialize previous_score
+        self.previous_score = 0
         self.lives = NB_VIES
         self.available_keys = AVAILABLE_KEYS.copy()
         self.rock_image = None
         self.rock_display_time = 0
         self.game_over = False
-        self.death_animation = None  # Reset death animation
+        self.death_animation = None
 
-        # Tutorial state variables
         self.tutorial_active = True
         self.tutorial_letters = []
         self.tutorial_completed = False
         self.countdown_start_time = 0
         self.countdown_active = False
 
-        # Reset difficulty settings
         self.difficulty = self.load_difficulty(self.settings.settings['difficulty'])
         self.spawn_rate = self.get_initial_spawn_rate()
 
-        # Reset lava with the appropriate delay
-        self.lava = Lava(WIDTH, HEIGHT, LAVA_SPEED, "./ressources/lava.jpg")
+        # Reset lava with the appropriate delay and speed from difficulty
+        self.lava = Lava(WIDTH, HEIGHT, self.difficulty.lava_speed, "./ressources/lava.jpg")
         self.lava.set_start_delay(self.difficulty.lava_start_delay)
 
         # Create tutorial letters
@@ -559,16 +616,11 @@ class Game:
             if key == obstacle.key:
                 if obstacle.is_trap:
                     # Trap handling code (unchanged)
-                    sound_thread = threading.Thread(target=play_wrong_key_sound)
+                    sound_thread = threading.Thread(target=lambda: self.play_sound_effect(wrong_key_sound))
                     sound_thread.start()
                     rock_thread = threading.Thread(target=self.display_rock_image)
                     rock_thread.start()
                     self.lives -= 1
-
-                    # Check for game over
-                    if self.lives <= 0:
-                        print("Player lost all lives - showing rock_loose animation")
-                        # Game over code...
                 else:
                     self.score += 10
                     self.player.climb()
@@ -603,9 +655,9 @@ class Game:
 
         while paused:
             screen.blit(overlay, (0, 0))  # Draw the semi-transparent overlay
-            pause_text = font.render("Paused", True, (255, 255, 255))
-            resume_text = font.render("Press ESC to Resume", True, (255, 255, 255))
-            main_menu_text = font.render("Press M for Main Menu", True, (255, 255, 255))
+            pause_text = font.render("Pause", True, (255, 255, 255))
+            resume_text = font.render("Appuyer sur ESC pour reprendre", True, (255, 255, 255))
+            main_menu_text = font.render("Appuyer sur M pour retourner au menu principal", True, (255, 255, 255))
             screen.blit(pause_text, (WIDTH // 2 - pause_text.get_width() // 2, HEIGHT // 2 - 50))
             screen.blit(resume_text, (WIDTH // 2 - resume_text.get_width() // 2, HEIGHT // 2))
             screen.blit(main_menu_text, (WIDTH // 2 - main_menu_text.get_width() // 2, HEIGHT // 2 + 50))
@@ -649,11 +701,16 @@ class Game:
 
         current_difficulty = self.settings.settings['difficulty']
 
-        # Find best score for current difficulty
+        # Check if this is a new best score for the current difficulty
+        is_new_best_score = False
         filtered_scores = [s for s in self.high_scores if
                            isinstance(s, dict) and
                            s.get('difficulty', current_difficulty) == current_difficulty]
 
+        if not filtered_scores or self.score > filtered_scores[0]['score']:
+            is_new_best_score = True
+
+        # Display information based on current scores
         if filtered_scores:
             top_score = filtered_scores[0]
             high_score_text = font.render(
@@ -671,6 +728,26 @@ class Game:
                 True, BLACK)
             screen.blit(overall_text, (WIDTH // 2 - overall_text.get_width() // 2, HEIGHT // 2 - 25))
 
+        # Display the new best score message with animation effect
+        if is_new_best_score and self.score > 0:
+            # Create pulsing text effect using sine wave
+            pulse = (math.sin(pygame.time.get_ticks() * 0.005) + 1) * 0.5  # 0.0 to 1.0
+            size_factor = 1.0 + pulse * 0.3  # Pulse between 1.0x and 1.3x
+
+            new_best_font = pygame.font.Font(None, int(72 * size_factor))
+            new_best_text = new_best_font.render("NOUVEAU RECORD!", True, (255, 215, 0))  # Gold color
+
+            # Add glowing effect by drawing the text multiple times with different colors
+            for offset in range(3, 0, -1):
+                glow_surface = new_best_font.render("NOUVEAU RECORD!", True, (255, 215, 0, 100))
+                screen.blit(glow_surface,
+                            (WIDTH // 2 - glow_surface.get_width() // 2,
+                             HEIGHT // 2 - 200 - offset * 2))
+
+            screen.blit(new_best_text,
+                        (WIDTH // 2 - new_best_text.get_width() // 2,
+                         HEIGHT // 2 - 200))
+
         screen.blit(game_over_text, (WIDTH // 2 - game_over_text.get_width() // 2, HEIGHT // 2 - 100))
         screen.blit(user_score_text, (WIDTH // 2 - user_score_text.get_width() // 2, HEIGHT // 2 - 50))
         screen.blit(high_score_text, (WIDTH // 2 - high_score_text.get_width() // 2, HEIGHT // 2))
@@ -680,20 +757,29 @@ class Game:
         pygame.display.flip()
 
     def show_settings_menu(self):
-        volume_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 - 50, 200, 20, 0.0, 1.0, self.settings.settings['volume'])
-        font_size_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2, 200, 20, 10, 100, self.settings.settings['font_size'])
-        square_size_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 + 50, 200, 20, 10, 100,
-                                    self.settings.settings['square_size'])
+        # Create individual sliders for the three audio channels
+        menu_music_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 - 150, 200, 20,
+                                   0.0, 1.0, self.settings.settings['menu_music_volume'])
+        game_music_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 - 100, 200, 20,
+                                   0.0, 1.0, self.settings.settings['game_music_volume'])
+        sound_effects_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 - 50, 200, 20,
+                                      0.0, 1.0, self.settings.settings['sound_effects_volume'])
+
+        # Original sliders for font and square size
+        font_size_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 + 50, 200, 20,
+                                  10, 100, self.settings.settings['font_size'])
+        square_size_slider = Slider(WIDTH // 2 - 100, HEIGHT // 2 + 100, 200, 20,
+                                    10, 100, self.settings.settings['square_size'])
 
         settings_running = True
         while settings_running:
             screen.blit(self.background_image, (0, 0))  # Draw the background image
-            title_text = font.render("Settings", True, BLACK)
-            back_text = font.render("Press B to go back", True, BLACK)
-            validate_text = font.render("Press V to Validate", True, BLACK)
+            title_text = font.render("Paramètres", True, BLACK)
+            back_text = font.render("Appuyer sur B pour retourner à l'écran précédent", True, BLACK)
+            validate_text = font.render("Appuyer sur V pour confirmer", True, BLACK)
 
             title_x = WIDTH // 2 - title_text.get_width() // 2
-            title_y = HEIGHT // 2 - 200
+            title_y = HEIGHT // 2 - 300
             back_x = WIDTH // 2 - back_text.get_width() // 2
             back_y = HEIGHT // 2 + 200
             validate_x = WIDTH // 2 - validate_text.get_width() // 2
@@ -708,19 +794,28 @@ class Game:
                 screen.blit(font.render(text, True, border_color), (x + 2, y + 2))
                 screen.blit(font.render(text, True, BLACK), (x, y))  # Main text
 
-            draw_text_with_border("Settings", title_x, title_y)
-            draw_text_with_border("Press B to go back", back_x, back_y)
-            draw_text_with_border("Press V to Validate", validate_x, validate_y)
+            draw_text_with_border("Paramètres", title_x, title_y)
+            draw_text_with_border("Appuyer sur B pour retourner à l'écran précédent", back_x, back_y)
+            draw_text_with_border("Appuyer sur V pour confirmer", validate_x, validate_y)
 
-            volume_slider.draw(screen)
+            # Draw all sliders
+            menu_music_slider.draw(screen)
+            game_music_slider.draw(screen)
+            sound_effects_slider.draw(screen)
             font_size_slider.draw(screen)
             square_size_slider.draw(screen)
 
-            volume_label = font.render(f"Volume: {volume_slider.value:.2f}", True, BLACK)
-            font_size_label = font.render(f"Font Size: {font_size_slider.value:.0f}", True, BLACK)
-            square_size_label = font.render(f"Square Size: {square_size_slider.value:.0f}", True, BLACK)
+            # Draw slider labels
+            menu_music_label = font.render(f"Musique du menu: {int(menu_music_slider.value * 100)}%", True, BLACK)
+            game_music_label = font.render(f"Musique du jeu: {int(game_music_slider.value * 100)}%", True, BLACK)
+            sound_effects_label = font.render(f"Effets sonores: {int(sound_effects_slider.value * 100)}%", True, BLACK)
+            font_size_label = font.render(f"Taille de la police: {int(font_size_slider.value)}", True, BLACK)
+            square_size_label = font.render(f"Taille des obstacles: {int(square_size_slider.value)}", True, BLACK)
 
-            screen.blit(volume_label, (volume_slider.rect.x, volume_slider.rect.y - 30))
+            # Position labels
+            screen.blit(menu_music_label, (menu_music_slider.rect.x, menu_music_slider.rect.y - 30))
+            screen.blit(game_music_label, (game_music_slider.rect.x, game_music_slider.rect.y - 30))
+            screen.blit(sound_effects_label, (sound_effects_slider.rect.x, sound_effects_slider.rect.y - 30))
             screen.blit(font_size_label, (font_size_slider.rect.x, font_size_slider.rect.y - 30))
             screen.blit(square_size_label, (square_size_slider.rect.x, square_size_slider.rect.y - 30))
 
@@ -734,17 +829,36 @@ class Game:
                     if event.key == pygame.K_b:
                         settings_running = False
                     if event.key == pygame.K_v:
-                        self.settings.settings['volume'] = volume_slider.value
+                        # Save all volume settings
+                        self.settings.settings['menu_music_volume'] = menu_music_slider.value
+                        self.settings.settings['game_music_volume'] = game_music_slider.value
+                        self.settings.settings['sound_effects_volume'] = sound_effects_slider.value
+
+                        # Legacy volume setting (for compatibility)
+                        self.settings.settings['volume'] = menu_music_slider.value
+
+                        # Save other settings
                         self.settings.settings['font_size'] = font_size_slider.value
                         self.settings.settings['square_size'] = square_size_slider.value
                         self.settings.save_settings()
                         self.apply_settings()  # Apply the new settings
                         print(
-                            f"Settings applied: Volume={volume_slider.value}, Font Size={font_size_slider.value}, Square Size={square_size_slider.value}")
+                            f"Settings applied: Menu Music={menu_music_slider.value}, Game Music={game_music_slider.value}, "
+                            f"Sound Effects={sound_effects_slider.value}, Font Size={font_size_slider.value}, "
+                            f"Square Size={square_size_slider.value}")
                         settings_running = False
-                volume_slider.handle_event(event)
+
+                # Handle all slider events
+                menu_music_slider.handle_event(event)
+                game_music_slider.handle_event(event)
+                sound_effects_slider.handle_event(event)
                 font_size_slider.handle_event(event)
                 square_size_slider.handle_event(event)
+
+                # Apply menu music volume immediately for feedback
+                if event.type == pygame.MOUSEBUTTONUP:
+                    if pygame.mixer.music.get_busy():
+                        pygame.mixer.music.set_volume(menu_music_slider.value)
 
     def run(self):
         try:
@@ -757,9 +871,9 @@ class Game:
             while self.running:
                 screen.fill(WHITE)
 
-                # Handle death animation
+
                 if self.death_animation and not self.death_animation.done:
-                    # Update and draw death animation
+
                     self.death_animation.update()
                     self.death_animation.draw(screen)
 
@@ -786,7 +900,7 @@ class Game:
                             obstacle.draw(screen, font)
 
                         instruction_font = pygame.font.Font(None, 48)
-                        instruction_text = instruction_font.render("Type the letters to begin!", True, BLACK)
+                        instruction_text = instruction_font.render("Appuyez sur les lettres pour démarrer !", True, BLACK)
                         screen.blit(instruction_text,
                                     (WIDTH // 2 - instruction_text.get_width() // 2,
                                      HEIGHT // 2 - 100))
@@ -805,18 +919,22 @@ class Game:
                                     self.handle_tutorial_key_press(letter)
 
                     else:
-                        # Normal gameplay after tutorial is complete
                         self.adjust_difficulty()
                         self.adjust_lava_speed()
 
                         if random.randint(0, self.spawn_rate) == 0:
                             self.generate_obstacle()
 
-                        for obstacle in self.obstacles:
+                        for obstacle in self.obstacles[:]:
                             obstacle.move_down()
                             if obstacle.pos[1] > HEIGHT:
                                 self.obstacles.remove(obstacle)
                                 print(f"Missed letter - lives remaining: {self.lives}")
+
+
+                                if obstacle.pos[1] > self.lava.rect.top:
+                                    self.lava.speed_up(self.difficulty.lava_speed_increment)
+
                                 if self.lives <= 0:
                                     print("Game over: No lives remaining (missed too many letters)")
                                     self.game_over = True
@@ -903,19 +1021,54 @@ class Game:
         # Load sound immediately to avoid delays
         try:
             death_sound = pygame.mixer.Sound('./ressources/death.mp3')
+            # Apply sound effects volume setting
+            death_sound.set_volume(self.settings.settings['sound_effects_volume'])
         except Exception as e:
             print(f"Error loading death sound: {e}")
             return
 
-        # Play sound with small fixed delay
-        def play_sound_with_delay():
-            # Wait a short fixed time (0.5 seconds) - adjust this for your 2-second animation
-            time.sleep(0.5)
-            print("Playing death sound")
-            death_sound.play()
+        # Use a single approach to play the death sound
+        # Remove the play_sound_with_delay function and thread
 
-        # Start sound thread
-        sound_thread = threading.Thread(target=play_sound_with_delay)
+        def monitor_animation_and_play_sound():
+            wait_start = time.time()
+            while not self.death_animation.loading_complete and time.time() - wait_start < 2:
+                time.sleep(0.05)
+
+            if not self.death_animation.loading_complete:
+                print("Animation loading timed out")
+                return
+
+            total_frames = len(self.death_animation.frames)
+            if total_frames == 0:
+                print("No animation frames loaded")
+                return
+
+            target_frame = int(total_frames * 0.5)
+            print(f"Will play sound at frame {target_frame} of {total_frames}")
+
+            last_frame = -1
+            while not self.death_animation.done:
+                current_frame = self.death_animation.current_frame
+
+                # Only check when frame changes to reduce CPU usage
+                if current_frame != last_frame:
+                    last_frame = current_frame
+
+                    # Debug information
+                    if current_frame % 5 == 0:  # Only log every 5th frame
+                        print(f"Animation at frame {current_frame}/{total_frames}")
+
+                    # Play sound at target frame
+                    if current_frame == target_frame:
+                        print("Playing death sound")
+                        death_sound.play()
+                        break
+
+                time.sleep(0.01)
+
+        # Start the monitoring thread
+        sound_thread = threading.Thread(target=monitor_animation_and_play_sound)
         sound_thread.daemon = True
         sound_thread.start()
 

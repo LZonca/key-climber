@@ -48,6 +48,25 @@ class Lava:
                     self.rect.y = min(self.rect.y, self.target_position)  # Make sure we don't go too far
                     self.moving_up = True  # Start moving up again
 
+    def speed_up(self, amount=None):
+        """Increase the lava speed when a key falls into it with a maximum cap"""
+        # Define maximum lava speed
+        max_speed = 10
+
+        # Use the provided amount or default to 0.2
+        increment = amount if amount is not None else 0.2
+
+        # Calculate new speed
+        new_speed = self.speed + increment
+
+        # Apply the cap
+        if new_speed <= max_speed:
+            self.speed = new_speed
+            print(f"Lava speed increased to {self.speed}")
+        else:
+            self.speed = max_speed
+            print(f"Lava reached maximum speed of {self.speed}")
+
     def move_down(self, amount):
         current_y = self.rect.y
         self.target_position = min(current_y + amount, pygame.display.Info().current_h - 50)

@@ -1,0 +1,172 @@
+@startuml KeyScale Class Diagram
+
+' Main classes
+class Game {
+  - settings: Settings
+  - player: Player
+  - obstacles: List<Obstacle>
+  - score: int
+  - lives: int
+  - clock: pygame.Clock
+  - running: bool
+  - available_keys: List<str>
+  - difficulty: Difficulty
+  - game_over: bool
+  - background: Background
+  - lava: Lava
+  - high_scores: List
+  + __init__()
+  + play_menu_music()
+  + play_sound_effect()
+  + play_game_music()
+  + get_player_name()
+  + update_high_scores()
+  + get_initial_spawn_rate()
+  + adjust_difficulty()
+  + load_difficulty()
+  + apply_settings()
+  + load_scores()
+  + save_scores()
+  + show_menu()
+  + adjust_lava_speed()
+  + generate_obstacle()
+  + create_tutorial()
+  + handle_tutorial_key_press()
+  + draw_countdown()
+  + reset_game()
+  + spawn_initial_obstacles()
+  + draw_lava_countdown()
+  + handle_key_press()
+  + log_positions()
+  + display_positions()
+  + pause_menu()
+  + display_rock_image()
+  + display_game_over()
+  + show_settings_menu()
+  + run()
+  + start_death_animation()
+}
+
+class Lava {
+  - rect: pygame.Rect
+  - speed: float
+  - moving_up: bool
+  - target_position: int
+  - image: pygame.Surface
+  - original_image: pygame.Surface
+  - start_delay: int
+  - start_time: int
+  - moving_enabled: bool
+  + __init__(width, height, speed, image_path)
+  + set_start_delay(delay_seconds)
+  + update_position()
+  + speed_up(amount)
+  + move_down(amount)
+  + increase_speed(increment)
+  + reset_position()
+  + draw(screen)
+}
+
+class Player {
+  - rect: pygame.Rect
+  + climb()
+  + draw(screen)
+}
+
+class Obstacle {
+  - pos: List[int, int]
+  - is_trap: bool
+  - key: str
+  - size: int
+  - speed: int
+  - tutorial: bool
+  + move_down()
+  + draw(screen, font)
+}
+
+class Background {
+  - image: pygame.Surface
+  - position: tuple
+  + draw(screen)
+  + move(player_rect, height)
+}
+
+class Difficulty {
+  - name: str
+  - obstacle_speed: int
+  - spawn_rate: int
+  - lava_speed_increment: float
+  - lava_start_delay: float
+  - initial_obstacles: int
+  - lava_speed: float
+  + __init__(name, obstacle_speed, spawn_rate, lava_speed_increment,
+          lava_start_delay, initial_obstacles, lava_speed)
+}
+
+class Settings {
+  - settings_file: str
+  - settings: dict
+  + __init__(settings_file)
+  + load_settings()
+  + save_settings()
+}
+
+class DifficultySelector {
+  - rect: pygame.Rect
+  - difficulties: List<str>
+  - current_index: int
+  - font: pygame.Font
+  - active: bool
+  + __init__(x, y, width, height, difficulties, current_difficulty)
+  + handle_event(event)
+  + draw(screen)
+  + get_current_difficulty()
+}
+
+class Slider {
+  - rect: pygame.Rect
+  - min_value: float
+  - max_value: float
+  - value: float
+  - dragging: bool
+  + __init__(x, y, width, height, min_value, max_value, initial_value)
+  + handle_event(event)
+  + draw(screen)
+}
+
+class InputBox {
+  - rect: pygame.Rect
+  - text: str
+  - font: pygame.Font
+  - active: bool
+  - color_inactive: tuple
+  - color_active: tuple
+  - color: tuple
+  + __init__(x, y, width, height, font)
+  + handle_event(event)
+  + update()
+  + draw(screen)
+}
+
+class Animation {
+  - frames: List<pygame.Surface>
+  - current_frame: int
+  - done: bool
+  - loading_complete: bool
+  + __init__(animation_path, width, height, skip_fade_in)
+  + update()
+  + draw(screen)
+}
+
+' Relationships
+Game --> Player: crée/gère
+Game --> Lava: crée/gère
+Game --> Obstacle: crée/gère
+Game --> Settings: utilise
+Game --> Background: crée/gère
+Game --> Difficulty: charge/utilise
+Game --> DifficultySelector: utilise dans le menu
+Game --> Slider: utilise dans les paramètres
+Game --> InputBox: utilise pour la saisie du nom d'utilisateur
+Game --> Animation: utilise pour l'animation lors de la mort
+@enduml

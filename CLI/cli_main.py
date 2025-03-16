@@ -8,6 +8,7 @@ import os
 import traceback
 
 from CLI.model.player import Player
+from scores_api import ScoreAPI
 
 scores_file = "scores_CLI.json"
 
@@ -42,63 +43,72 @@ class Game:
         self.running = True
         self.initialize_player()  # Re-ask for player name on reset
 
+    # Add this method to your Game class
     def get_high_scores(self):
-        """Retrieves the current high scores or creates empty file if not exists."""
+        """Retrieve high scores from API with fallback to local file"""
         try:
-            if os.path.exists(scores_file):
-                with open(scores_file, 'r') as f:
+            # Try API first
+            api = ScoreAPI()
+            try:
+                scores = api.get_cli_scores()
+                if scores:
+                    return scores
+            except Exception as e:
+                print(f"Error retrieving scores from API: {e}")
+                print("Falling back to local scores")
+
+            # Fallback to local file
+            if os.path.exists("CLI/scores_CLI.json"):
+                with open("CLI/scores_CLI.json", 'r') as f:
                     return json.load(f)
             else:
-                # Create the file with an empty array
-                with open(scores_file, 'w') as f:
+                # Create the file with an empty array if it doesn't exist
+                os.makedirs(os.path.dirname("CLI/scores_CLI.json"), exist_ok=True)
+                with open("CLI/scores_CLI.json", 'w') as f:
                     json.dump([], f)
-                print(f"Created new high scores file: {scores_file}")
                 return []
         except Exception as e:
-            print(f"Error handling high scores file: {e}")
-            # Try to create the file anyway if there was an error
-            try:
-                with open(scores_file, 'w') as f:
-                    json.dump([], f)
-                print(f"Created new high scores file after error: {scores_file}")
-            except Exception as write_error:
-                print(f"Failed to create high scores file: {write_error}")
+            print(f"Error handling high scores: {e}")
             return []
 
-    def update_high_scores(self, player_name, new_score):
+    def view_high_scores(self):
+        score_api = ScoreAPI()
+
         try:
-            if not hasattr(self, 'high_scores') or self.high_scores is None:
-                self.high_scores = []
+            # Try API first
+            try:
+                scores = score_api.get_cli_scores()
+                print("Scores retrieved from API")
+            except Exception as e:
+                print(f"Could not retrieve scores from API: {e}")
+                print("Falling back to local scores")
 
-            scores = self.high_scores.copy()
+                # Fallback to local file
+                with open(scores_file, 'r') as file:
+                    scores = json.load(file)
 
-            avg_reaction_time = sum(self.reaction_times) / len(self.reaction_times) if self.reaction_times else 0
+            if not scores:
+                print("Aucun score enregistré pour le moment.")
+                return
 
-            safe_player_name = str(player_name).strip()[:17]
-            if not safe_player_name:
-                safe_player_name = "Anonyme"
+            print("\n╔═════════════════════════════════════════════════════════════════════╗")
+            print("║                           MEILLEURS SCORES                          ║")
+            print("╠═══════╦═══════════════════╦════════╦════════════╦═══════════════════╣")
+            print("║ Rang  ║ Joueur            ║ Score  ║ Lettres    ║ Temps moyen (s)   ║")
+            print("╠═══════╬═══════════════════╬════════╬════════════╬═══════════════════╣")
 
-            new_entry = {
-                "name": safe_player_name,
-                "score": new_score,
-                "letters": getattr(self, 'correct_letters', 0),
-                "avg_time": round(avg_reaction_time, 2)
-            }
+            for i, score_data in enumerate(scores):
+                name = score_data.get("name", "Anonyme")
+                score = score_data.get("score", 0)
+                letters = score_data.get("letters", 0)
+                avg_time = score_data.get("avg_time", 0)
+                print(f"║ {i + 1:<5} ║ {name[:17]:<17} ║ {score:<6} ║ {letters:<10} ║ {avg_time:<17} ║")
 
-            scores.append(new_entry)
-            scores.sort(key=lambda x: x["score"], reverse=True)
-            scores = scores[:10]
-
-            with open(scores_file, 'w') as f:
-                json.dump(scores, f, indent=4)
-
-            self.high_scores = scores
-            return scores
-
-        except Exception as e:
-            print(f"Erreur lors de la mise à jour des meilleurs scores: {e}")
-            traceback.print_exc()
-            return []
+            print("╚═══════╩═══════════════════╩════════╩════════════╩═══════════════════╝\n")
+        except FileNotFoundError:
+            print("Aucun score enregistré. Soyez le premier à établir un record!")
+        except json.JSONDecodeError:
+            print("Erreur de lecture du fichier de scores. Le fichier est peut-être corrompu.")
 
     def get_player_name(self):
         print("\n╔═══════════════════════════════════╗")
@@ -111,6 +121,62 @@ class Game:
             player_name = "Anonyme"
 
         return player_name
+
+    def update_high_scores(self, player_name, score):
+        """Update high scores in API and local file"""
+        try:
+            # Calculate average reaction time
+            avg_time = 0
+            if self.reaction_times:
+                avg_time = sum(self.reaction_times) / len(self.reaction_times)
+                avg_time = round(avg_time, 2)
+
+            # First try to save to API
+            api = ScoreAPI()
+            api_success = api.save_cli_score(
+                name=player_name,
+                score=score,
+                letters=self.correct_letters,
+                avg_time=avg_time
+            )
+
+            # Now update local file regardless of API success
+            if not os.path.exists("CLI/scores_CLI.json"):
+                os.makedirs(os.path.dirname("CLI/scores_CLI.json"), exist_ok=True)
+                with open("CLI/scores_CLI.json", 'w') as f:
+                    json.dump([], f)
+
+            try:
+                with open("CLI/scores_CLI.json", 'r') as f:
+                    high_scores = json.load(f)
+            except (FileNotFoundError, json.JSONDecodeError):
+                high_scores = []
+
+            # Add new score
+            new_score = {
+                "name": player_name,
+                "score": score,
+                "letters": self.correct_letters,
+                "avg_time": avg_time
+            }
+            high_scores.append(new_score)
+
+            # Sort by score (descending)
+            high_scores.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+            # Keep only top 10 scores
+            high_scores = high_scores[:10]
+
+            # Save back to file
+            with open("CLI/scores_CLI.json", 'w') as f:
+                json.dump(high_scores, f, indent=4)
+
+            self.high_scores = high_scores
+            return True
+        except Exception as e:
+            print(f"Error updating high scores: {e}")
+            traceback.print_exc()
+            return False
 
     def run(self):
         try:
@@ -219,28 +285,41 @@ class Game:
         except KeyboardInterrupt:
             print("\n\nJeu terminé par l'utilisateur.")
 
+
 def view_high_scores():
+    score_api = ScoreAPI()
+
     try:
-        with open(scores_file, 'r') as file:
-            scores = json.load(file)
-            if not scores:
-                print("Aucun score enregistré pour le moment.")
-                return
+        # Try API first
+        try:
+            scores = score_api.get_cli_scores()
+            print("Scores retrieved from API")
+        except Exception as e:
+            print(f"Could not retrieve scores from API: {e}")
+            print("Falling back to local scores")
 
-            print("\n╔═════════════════════════════════════════════════════════════════════╗")
-            print("║                           MEILLEURS SCORES                          ║")
-            print("╠═══════╦═══════════════════╦════════╦════════════╦═══════════════════╣")
-            print("║ Rang  ║ Joueur            ║ Score  ║ Lettres    ║ Temps moyen (s)   ║")
-            print("╠═══════╬═══════════════════╬════════╬════════════╬═══════════════════╣")
+            # Fallback to local file
+            with open("CLI/scores_CLI.json", 'r') as file:  # Updated path
+                scores = json.load(file)
 
-            for i, score_data in enumerate(scores):
-                name = score_data.get("name", "Anonyme")
-                score = score_data.get("score", 0)
-                letters = score_data.get("letters", 0)
-                avg_time = score_data.get("avg_time", 0)
-                print(f"║ {i+1:<5} ║ {name[:17]:<17} ║ {score:<6} ║ {letters:<10} ║ {avg_time:<17} ║")
+        if not scores:
+            print("Aucun score enregistré pour le moment.")
+            return
 
-            print("╚═══════╩═══════════════════╩════════╩════════════╩═══════════════════╝\n")
+        print("\n╔═════════════════════════════════════════════════════════════════════╗")
+        print("║                           MEILLEURS SCORES                          ║")
+        print("╠═══════╦═══════════════════╦════════╦════════════╦═══════════════════╣")
+        print("║ Rang  ║ Joueur            ║ Score  ║ Lettres    ║ Temps moyen (s)   ║")
+        print("╠═══════╬═══════════════════╬════════╬════════════╬═══════════════════╣")
+
+        for i, score_data in enumerate(scores):
+            name = score_data.get("name", "Anonyme")
+            score = score_data.get("score", 0)
+            letters = score_data.get("letters", 0)
+            avg_time = score_data.get("avg_time", 0)
+            print(f"║ {i + 1:<5} ║ {name[:17]:<17} ║ {score:<6} ║ {letters:<10} ║ {avg_time:<17} ║")
+
+        print("╚═══════╩═══════════════════╩════════╩════════════╩═══════════════════╝\n")
     except FileNotFoundError:
         print("Aucun score enregistré. Soyez le premier à établir un record!")
     except json.JSONDecodeError:
@@ -248,7 +327,7 @@ def view_high_scores():
 
 def main():
     parser = argparse.ArgumentParser(description="Jeu de réflexes CLI")
-    parser.add_argument('command', choices=['start', 'highscores'], help="Commande à exécuter", nargs='?', default='start')
+    parser.add_argument('command', choices=['start', 'highscores', 'sync'], help="Commande à exécuter", nargs='?', default='start')
     args = parser.parse_args()
 
     if args.command == 'start':
@@ -258,6 +337,14 @@ def main():
         input("Appuyez sur Entrée pour quitter...")
     elif args.command == 'highscores':
         view_high_scores()
+    elif args.command == 'sync':
+        print("Synchronisation des scores locaux avec le serveur...")
+        score_api = ScoreAPI()
+        try:
+            score_api.sync_local_scores()
+            print("Synchronisation terminée!")
+        except Exception as e:
+            print(f"Erreur lors de la synchronisation: {e}")
 
 if __name__ == "__main__":
     main()
